@@ -91,6 +91,9 @@ export function fmtDayYear(d: ISODate): string {
 export function fmtWeekday(d: ISODate): string {
   return DOW[dow(d)]!;
 }
+/** 1 → "1st", 2 → "2nd", 11 → "11th", 22 → "22nd". */
+export const ordinal = (n: number): string => `${n}${n % 10 > 3 || n % 10 === 0 || [11, 12, 13].includes(n % 100) ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10]}`;
+
 /** "Thursday 15 Oct 2026" */
 export function fmtFull(d: ISODate): string {
   return `${DOW_LONG[dow(d)]} ${fmtDayYear(d)}`;

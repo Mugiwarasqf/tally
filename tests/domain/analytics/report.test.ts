@@ -3,6 +3,7 @@ import { toCatMap } from '../../../src/domain/analytics/aggregate';
 import type { CycleView } from '../../../src/domain/analytics/budget';
 import { cycleView } from '../../../src/domain/analytics/budget';
 import type { AccountCoverage } from '../../../src/domain/analytics/coverage';
+import { statementStartDay } from '../../../src/domain/analytics/coverage';
 import { buildReportCard, gradeOf, interpolate, missingWithin } from '../../../src/domain/analytics/report';
 import { spendHistory } from '../../../src/domain/analytics/trend';
 import { DEFAULT_CATEGORIES } from '../../../src/domain/categorize/categories';
@@ -134,5 +135,23 @@ describe('missingWithin', () => {
       { start: '2026-04-26', end: '2026-04-30' },
     ]);
     expect(missingWithin([{ start: '2026-03-01', end: '2026-05-30' }], '2026-04-01', '2026-04-30')).toEqual([]);
+  });
+});
+
+describe('statement start day', () => {
+  const f = (periodStart: string, periodEnd: string) => ({ id: periodStart, hash: '', name: '', format: 'pdf-hsbc', accountId: 'a', periodStart, periodEnd, txnCount: 1, addedCount: 1, reconciled: true, importedAt: 0 }) as never;
+  it('finds the day monthly statements start on', () => {
+    expect(statementStartDay([f('2026-07-20', '2026-08-19'), f('2026-08-20', '2026-09-19'), f('2026-09-20', '2026-10-19')])).toBe(20);
+  });
+  it('ignores long custom exports and says nothing when statements disagree', () => {
+    expect(statementStartDay([f('2025-11-01', '2026-05-31')])).toBeNull();
+    expect(statementStartDay([f('2026-07-20', '2026-08-19'), f('2026-08-03', '2026-09-02')])).toBeNull();
+  });
+});
+
+describe('ordinal', () => {
+  it('writes day numbers the way people say them', async () => {
+    const { ordinal } = await import('../../../src/lib/dates');
+    expect([1, 2, 3, 4, 11, 12, 13, 19, 20, 21, 22, 23, 28].map(ordinal)).toEqual(['1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '19th', '20th', '21st', '22nd', '23rd', '28th']);
   });
 });

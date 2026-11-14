@@ -2,10 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../app/data';
 import { closeMonth, reopenMonth, setBudget } from '../data/actions';
 import { history as typicalSpend, suggestBudgets } from '../domain/analytics/budget';
+import { statementStartDay } from '../domain/analytics/coverage';
 import { buildReportCard } from '../domain/analytics/report';
+import { saveSettings } from '../data/settings';
 import type { CatStatus, Dimension, DimKey } from '../domain/analytics/report';
 import { REVIEW_THRESHOLD } from '../domain/categorize/engine';
-import { addMonths, cycleLabel, fmtDay } from '../lib/dates';
+import { addMonths, cycleLabel, fmtDay, ordinal } from '../lib/dates';
 import { fmt } from '../lib/money';
 import { Banner, CardHead, CatTile, IconTile, Meter } from '../ui/components/bits';
 import { PeriodPill } from '../ui/components/Period';
@@ -61,6 +63,12 @@ export function Report() {
     [txns, card.start, card.end],
   );
   const monthFiles = files.filter((f) => f.periodStart && f.periodEnd && f.periodStart <= card.end && f.periodEnd >= card.start);
+  // Missing days only at the end of the month, past the newest statement, usually mean "next statement not issued
+  // yet". When statements run on a fixed cycle (HSBC: 20th to 19th), offer to line budget months up with them.
+  const stmtDay = statementStartDay(files);
+  const lastStatement = files.reduce<string | undefined>((m, f) => (f.periodEnd && (!m || f.periodEnd > m) ? f.periodEnd : m), undefined);
+  const missingAtEnd = card.coverage.accounts.some((a) => a.missing.some((m) => m.end === card.end && lastStatement !== undefined && m.start > lastStatement));
+  const offerAlign = stmtDay !== null && stmtDay !== startDay && card.coverage.accounts.some((a) => a.missing.length > 0);
 
   const close = async () => {
     if (!card.overall) return;
@@ -129,6 +137,17 @@ export function Report() {
             <span><strong>Income.</strong> {fmt(card.coverage.share > 0 ? cycle.income : 0, { whole: true })} received{cycle.expectedIncome ? ` of about ${fmt(cycle.expectedIncome, { whole: true })} expected` : ''}.</span>
           </li>
         </ul>
+        {missingAtEnd && (
+          <p className="t-small">The missing days come after your newest statement (it ends {fmtDay(lastStatement!)}). They’ll be in the next one once your bank issues it; nothing has gone wrong.</p>
+        )}
+        {offerAlign && (
+          <Banner
+            tone="brand" icon="CalendarBlank"
+            action={<button className="btn btn--primary btn--sm" onClick={async () => { await saveSettings({ monthStartDay: stmtDay! }); toast(`Budget months now start on the ${ordinal(stmtDay!)}`); }}>Start months on the {ordinal(stmtDay!)}</button>}
+          >
+            <strong>Your statements run from the {ordinal(stmtDay!)} to the {ordinal(stmtDay! - 1 || 28)}.</strong> Start budget months on the {ordinal(stmtDay!)} too, and every month matches one statement exactly, so it’s complete the moment you import it. You can change this in Settings.
+          </Banner>
+        )}
       </section>
 
       {!card.hasPlan && (

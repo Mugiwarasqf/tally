@@ -41,3 +41,21 @@ export const staleDays = (cov: AccountCoverage[], today: ISODate): number | null
   const last = lastCovered(cov);
   return last ? Math.max(0, diffDays(last, today)) : null;
 };
+
+/**
+ * The day of the month an account's statements usually start on (HSBC often runs 20th to 19th), when its
+ * monthly statements agree on one. Budget months that start on the same day line up with whole statements,
+ * so a month is complete as soon as its statement is imported. Statements covering a custom range (a
+ * six-month export, say) are ignored.
+ */
+export function statementStartDay(files: ImportedFile[]): number | null {
+  const days = files
+    .filter((f) => f.periodStart && f.periodEnd)
+    .filter((f) => { const len = diffDays(f.periodStart!, f.periodEnd!) + 1; return len >= 27 && len <= 32; })
+    .map((f) => Number(f.periodStart!.slice(8, 10)));
+  if (!days.length) return null;
+  const counts = new Map<number, number>();
+  for (const d of days) counts.set(d, (counts.get(d) ?? 0) + 1);
+  const [day, n] = [...counts].sort((a, b) => b[1] - a[1])[0]!;
+  return n / days.length >= 0.75 && day <= 28 ? day : null;
+}
