@@ -125,7 +125,9 @@
 .chip--serious { background: var(--serious-bg); color: var(--serious-text); }
 .chip--critical { background: var(--critical-bg); color: var(--critical-text); }
 .chip--brand { background: var(--mint-wash); color: var(--ink); }
-.chip--on-hero { background: rgba(155, 231, 192, 0.18); color: var(--mint); }
+/* Neutral on purpose: these chips carry good and bad news alike ("£623 above your usual"), so they never use a
+   status colour; the icon and the words carry the meaning. */
+.chip--on-hero { background: rgba(245, 242, 234, 0.14); color: var(--hero-ink); }
 .chip--btn { cursor: pointer; }
 .chip--btn:hover { background: var(--sunken); }
 

@@ -3,13 +3,14 @@ import { useApp } from '../app/data';
 import { closeMonth, reopenMonth, setBudget } from '../data/actions';
 import { history as typicalSpend, suggestBudgets } from '../domain/analytics/budget';
 import { statementStartDay } from '../domain/analytics/coverage';
+import { expectedIncomeFor } from '../domain/analytics/income';
 import { buildReportCard } from '../domain/analytics/report';
 import { saveSettings } from '../data/settings';
 import type { CatStatus, Dimension, DimKey } from '../domain/analytics/report';
 import { REVIEW_THRESHOLD } from '../domain/categorize/engine';
 import { addMonths, cycleLabel, fmtDay, ordinal } from '../lib/dates';
 import { fmt } from '../lib/money';
-import { Banner, CardHead, CatTile, IconTile, Meter } from '../ui/components/bits';
+import { Banner, CardHead, CatTile, Empty, IconTile, Meter } from '../ui/components/bits';
 import { PeriodPill } from '../ui/components/Period';
 import { Sheet, useConfirm, useToast } from '../ui/components/overlay';
 import { Icon } from '../ui/icons';
@@ -63,6 +64,17 @@ export function Report() {
     [txns, card.start, card.end],
   );
   const monthFiles = files.filter((f) => f.periodStart && f.periodEnd && f.periodStart <= card.end && f.periodEnd >= card.start);
+
+  // Income for this month, in plain terms: what arrived (and on how many paydays), and, while the month is still
+  // to come or under way, what the pay schedule says to expect. Weekly pay lands 4 or 5 times a month, so the
+  // expected figure moves from month to month; the payday count shows why.
+  const noData = card.coverage.share === 0;
+  const pay = useMemo(() => {
+    const inMonth = txns.filter((t) => t.date >= card.start && t.date <= card.end && t.amount > 0 && t.categoryId === 'salary');
+    return { total: inMonth.reduce((s, t) => s + t.amount, 0), days: new Set(inMonth.map((t) => t.date)).size };
+  }, [txns, card.start, card.end]);
+  const expect = useMemo(() => expectedIncomeFor(app.income, card.start, card.end), [app.income, card.start, card.end]);
+  const cadence = app.income.main?.cadence;
   // Missing days only at the end of the month, past the newest statement, usually mean "next statement not issued
   // yet". When statements run on a fixed cycle (HSBC: 20th to 19th), offer to line budget months up with them.
   const stmtDay = statementStartDay(files);
@@ -132,9 +144,20 @@ export function Report() {
             <span className="grow"><strong>Categories.</strong> {unreviewed ? `${unreviewed} transaction${unreviewed === 1 ? '' : 's'} still uncertain.` : 'Everything is categorised.'}</span>
             {unreviewed > 0 && <a className="btn btn--ghost btn--sm" href="#/transactions?review=1">Review</a>}
           </li>
-          <li className="is-ok">
-            <Icon name="Briefcase" size={20} weight="fill" />
-            <span><strong>Income.</strong> {fmt(card.coverage.share > 0 ? cycle.income : 0, { whole: true })} received{cycle.expectedIncome ? ` of about ${fmt(cycle.expectedIncome, { whole: true })} expected` : ''}.</span>
+          <li className={noData ? 'is-bad' : 'is-ok'}>
+            <Icon name={noData ? 'WarningCircle' : 'Briefcase'} size={20} weight="fill" />
+            <span>
+              <strong>Income.</strong>{' '}
+              {noData
+                ? `Not known yet: no imported statement covers ${label}, so pay you’ve received this month isn’t in Tally. Import the statement that covers it.`
+                : <>
+                  {fmt(cycle.income, { whole: true })} came in{pay.days > 0 ? `, including ${fmt(pay.total, { whole: true })} pay on ${pay.days} payday${pay.days === 1 ? '' : 's'}` : ''}
+                  {card.coverage.share < 1 ? ' (so far, from the days your statements cover)' : ''}.
+                </>}
+              {cycle.phase !== 'past' && expect.total > 0 && (
+                <> Your pay schedule expects about {fmt(expect.total, { whole: true })}{expect.paydays ? ` from ${expect.paydays} ${cadence ?? ''} payday${expect.paydays === 1 ? '' : 's'}` : ''}{cadence === 'weekly' ? ', which is why it varies: some months have 4 paydays, some 5.' : '.'}</>
+              )}
+            </span>
           </li>
         </ul>
         {missingAtEnd && (
@@ -150,6 +173,18 @@ export function Report() {
         )}
       </section>
 
+      {noData ? (
+        <section className="card">
+          <Empty icon="CalendarBlank" title={`Nothing to grade for ${label} yet`} action={<button className="btn btn--primary" onClick={() => setAdding(true)}><Icon name="UploadSimple" size={18} weight="bold" />Add statements</button>}>
+            {cycle.phase === 'past'
+              ? `None of your imported statements cover ${label}. Add them and the report card fills in.`
+              : `${label} ${cycle.phase === 'current' ? 'is still under way' : 'hasn’t started'}, and your newest statement ends ${lastStatement ? fmtDay(lastStatement) : 'earlier'}. Report cards are for finished months: come back once ${label} is over and its statement is imported.`}
+          </Empty>
+        </section>
+      ) : (<>
+      {cycle.phase === 'current' && (
+        <Banner tone="brand" icon="Info"><strong>{label} isn’t over yet.</strong> This is a preview from the days your statements cover; the grade is final once the month ends and its statement is in.</Banner>
+      )}
       {!card.hasPlan && (
         <Banner tone="brand" icon="Target" action={<a className="btn btn--primary btn--sm" href="#/budget">Set a budget</a>}>
           <strong>There’s no budget for {label} to grade against.</strong> You can still see how the month compared with your history below.
@@ -165,7 +200,7 @@ export function Report() {
       {card.hasPlan && card.overall && (
         <div className="bento">
           {/* ------------------------------------------------------ 2. the grade */}
-          <section className="hero span-5 gradehero" aria-label="Overall grade">
+          <section className={`hero span-5 gradehero gradehero--${card.overall.grade[0]!.toLowerCase()}`} aria-label="Overall grade">
             <span className="t-eyebrow">2 · Report card · {label}</span>
             <div className="gradehero__row">
               <span className="stamp" aria-label={`Grade ${card.overall.grade}`}>{card.overall.grade}</span>
@@ -184,7 +219,9 @@ export function Report() {
             <div className="cluster">
               {closed
                 ? <button className="btn btn--on-hero btn--sm" onClick={async () => { await reopenMonth(viewKey); toast('Month reopened'); }}><Icon name="ArrowCounterClockwise" size={16} />Reopen</button>
-                : <button className="btn btn--mint" onClick={close}><Icon name="CheckCircle" size={18} weight="fill" />Close {label}</button>}
+                : cycle.phase === 'past'
+                  ? <button className="btn btn--mint" onClick={close}><Icon name="CheckCircle" size={18} weight="fill" />Close {label}</button>
+                  : <span className="t-small">You can close {label} once it’s over.</span>}
             </div>
           </section>
 
@@ -303,12 +340,14 @@ export function Report() {
         </div>
       )}
 
+      </>)}
+
       {/* ------------------------------------------------------- grade history */}
       <section className="card">
         <CardHead title="Report card history" sub="Closed months keep their grade, so you can watch it improve." />
-        {reports.length || card.overall ? (
+        {reports.length || (card.overall && !noData) ? (
           <ol className="gradestrip">
-            {[...reports.filter((r) => r.month !== viewKey), ...(closed ? [closed] : card.overall ? [{ month: viewKey, score: card.overall.score, grade: card.overall.grade, provisional: true, planned: 0, actual: 0, closedAt: 0, dims: [] }] : [])]
+            {[...reports.filter((r) => r.month !== viewKey), ...(closed ? [closed] : card.overall && !noData ? [{ month: viewKey, score: card.overall.score, grade: card.overall.grade, provisional: true, planned: 0, actual: 0, closedAt: 0, dims: [] }] : [])]
               .sort((a, b) => a.month.localeCompare(b.month)).slice(-12).map((r) => (
                 <li key={r.month} className={`gradecell${r.month === viewKey ? ' is-current' : ''}`}>
                   <span className={`gchip gchip--lg ${tone(r.grade)}`}>{r.grade}</span>
