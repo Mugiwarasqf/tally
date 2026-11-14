@@ -1,6 +1,6 @@
 # Tally
 
-Local-first expense tracker, budget planner and debt planner (PWA). Vite + React 19 + TypeScript 7 + Dexie (IndexedDB). UK, HSBC, GBP. See [README.md](README.md) for features.
+Local-first expense tracker, budget planner and debt planner (PWA). Vite + React 19 + TypeScript 7 + Dexie (IndexedDB). UK, GBP; PDF readers for HSBC UK and Revolut. See [README.md](README.md) for features.
 
 ## Hard constraints (from the user)
 
@@ -9,6 +9,7 @@ Local-first expense tracker, budget planner and debt planner (PWA). Vite + React
 - **Do a case study before any design decision** (research what leading products do, then test candidates). Typeface and palette were chosen this way, see `docs/03-design-system.md`.
 - Keep the repo root to files tools require. Everything else lives in a named folder.
 - Real bank statements and personal data never go in the repo or in tests; tests use invented fixtures (`tests/fixtures/`).
+- **Built to be shared.** Detection must work for anyone: no user's name, employer, account numbers or local shops in code, comments or the merchant dictionary. Add national chains and services only; everything personal is learned from each user's own choices at runtime.
 
 ## Layout rules
 

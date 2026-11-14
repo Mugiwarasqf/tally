@@ -5,6 +5,7 @@
 | Format | Notes |
 |---|---|
 | **HSBC UK PDF** (Basic, Advance, Premier, Bank Account) | Parsed by `src/domain/import/hsbc.ts`. Verified against real statements; every printed total and daily balance reconciles. Text-based PDFs only (scanned images need OCR, which is out of scope). |
+| **Revolut PDF** (Statement / Custom Statement) | Parsed by `src/domain/import/revolut.ts`. Every row prints its balance, so every row is checked, plus the printed Total and the summary's opening and closing balances. Only the GBP current account is imported; other currencies are reported and left out; savings-pot interest tables are skipped. Moves to and from the savings pot are own-account transfers. |
 | **CSV** | Columns are auto-detected (date, description, amount or debit/credit, balance); day/month order is inferred from the data (UK first). If the guess is wrong the user maps columns by hand. |
 | **OFX / QFX** | SGML or XML flavour. |
 | **QIF** | `D` date, `T` amount, `P` payee, `M` memo records. |
