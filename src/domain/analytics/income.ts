@@ -1,4 +1,4 @@
-import { diffDays } from '../../lib/dates';
+import { diffDays, fmtDay } from '../../lib/dates';
 import type { ISODate } from '../../lib/dates';
 import { fmt, roundTo5 } from '../../lib/money';
 import type { Pence } from '../../lib/money';
@@ -44,6 +44,18 @@ export interface IncomeProfile {
   nextPay?: { date: ISODate; amount: Pence; label: string; projected: boolean };
   /** True when the pay figure came from the user's profile rather than detection. */
   declared: boolean;
+  /** Payers who used to pay you regularly and have stopped (previous jobs), most recent first. Never planned on. */
+  past: PastPayer[];
+}
+
+export interface PastPayer {
+  label: string;
+  mkey: string;
+  cadence: IncomeStream['cadence'];
+  amount: Pence;
+  first: ISODate;
+  last: ISODate;
+  payments: number;
 }
 
 const PER_MONTH: Record<IncomeStream['cadence'], number> = { weekly: 52 / 12, fortnightly: 26 / 12, monthly: 1 };
@@ -86,10 +98,19 @@ export function buildIncomeProfile(txns: Txn[], cats: CatMap, recurring: Recurri
     regularMkeys = new Set(pay.map((t) => t.mkey));
   }
 
+  // Previous jobs: steady pay that has stopped. Real income while it lasted, but nothing to plan on now.
   const range = dateRange(txns);
+  const past: PastPayer[] = range
+    ? detectRecurring(txns, cats, range.max, { includeEnded: true })
+      .filter((r): r is Recurring & { cadence: IncomeStream['cadence'] } => r.ended === true && r.direction === 'in' && r.cadence !== 'yearly' && r.categoryId === 'salary')
+      .map((r) => ({ label: r.merchant, mkey: r.key.slice(3), cadence: r.cadence, amount: r.amount, first: r.dates[0]!, last: r.lastDate, payments: r.occurrences }))
+      .sort((a, b) => b.last.localeCompare(a.last))
+    : [];
+  const pastMkeys = new Set(past.map((p) => p.mkey));
+
   const months = range ? Math.max(1, (diffDays(range.min, range.max) + 1) / MONTH_DAYS) : 1;
   const irregularTotal = txns
-    .filter((t) => kindOf(t, cats) === 'income' && t.categoryId !== 'refunds' && !regularMkeys.has(t.mkey))
+    .filter((t) => kindOf(t, cats) === 'income' && t.categoryId !== 'refunds' && !regularMkeys.has(t.mkey) && !pastMkeys.has(t.mkey))
     .reduce((s, t) => s + t.amount, 0);
   const irregularMonthly = Math.max(0, Math.round(irregularTotal / months));
   const regularMonthly = streams.reduce((s, x) => s + x.monthly, 0);
@@ -108,7 +129,7 @@ export function buildIncomeProfile(txns: Txn[], cats: CatMap, recurring: Recurri
   }
   const main = streams[0];
   return {
-    streams, main, regularMonthly, irregularMonthly, declared,
+    streams, main, regularMonthly, irregularMonthly, declared, past,
     // Declared pay is planned on exactly; detected pay also counts half of irregular income.
     expectedMonthly: declared ? regularMonthly : roundTo5(regularMonthly + irregularMonthly * 0.5),
     payday: main?.payday,
@@ -156,7 +177,8 @@ const RHYTHM: Record<IncomeStream['cadence'], string> = { weekly: 'every week', 
  */
 export function incomePatternPatches(txns: Txn[], cats: CatMap, asOf: ISODate): TxnPatch[] {
   const patches: TxnPatch[] = [];
-  for (const r of detectRecurring(txns, cats, asOf)) {
+  // Ended rhythms count too: weekly pay from a job you've since left was still pay.
+  for (const r of detectRecurring(txns, cats, asOf, { includeEnded: true })) {
     if (r.direction !== 'in' || r.cadence === 'yearly') continue;
     const mkey = r.key.slice(3); // strip "in:"
     for (const t of txns) {
@@ -165,7 +187,12 @@ export function incomePatternPatches(txns: Txn[], cats: CatMap, asOf: ISODate): 
       if (!unexplained) continue;
       patches.push({
         id: t.id,
-        patch: { categoryId: 'salary', catSource: 'heuristic', confidence: 0.85, reason: `Arrives ${RHYTHM[r.cadence]} for about ${fmt(r.amount)}: looks like regular pay` },
+        patch: {
+          categoryId: 'salary', catSource: 'heuristic', confidence: 0.85,
+          reason: r.ended
+            ? `Arrived ${RHYTHM[r.cadence]} for about ${fmt(r.amount)} until ${fmtDay(r.lastDate)}: looks like pay from a previous job`
+            : `Arrives ${RHYTHM[r.cadence]} for about ${fmt(r.amount)}: looks like regular pay`,
+        },
       });
     }
   }

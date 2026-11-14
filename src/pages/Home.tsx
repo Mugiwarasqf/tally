@@ -323,6 +323,11 @@ function Dashboard() {
               <p className="t-xs">About {fmt(income.expectedMonthly, { whole: true })} a month to plan on.</p>
             </div>
           ) : <p className="t-small">No regular pay found yet. It’s picked out by its rhythm: weekly, every two weeks or monthly.</p>}
+          {income.past.length > 0 && (
+            <p className="t-xs">
+              Before that: {income.past.slice(0, 2).map((p) => `${p.label} (${p.cadence}, until ${fmtDay(p.last)})`).join('; ')}. Past pay counts in old months, never in plans.
+            </p>
+          )}
         </section>
       </div>
     </>

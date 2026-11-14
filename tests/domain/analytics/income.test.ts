@@ -111,3 +111,38 @@ describe('pattern-based income classification', () => {
     expect(incomePatternPatches(txns, cats, '2026-03-05')).toEqual([]);
   });
 });
+
+describe('changing jobs', () => {
+  // Weekly pay from one employer until March, then a different employer from April.
+  const old = series('2026-01-02', 7, 12, 26_000, 'Old Employer Ltd');
+  const next = series('2026-04-03', 7, 12, 45_000, 'New Employer Ltd');
+  const txns = [...old, ...next];
+  const asOf = last(txns);
+  const applied = (): Txn[] => {
+    const patches = new Map(incomePatternPatches(txns, cats, asOf).map((p) => [p.id, p.patch]));
+    return txns.map((t) => ({ ...t, ...patches.get(t.id) }));
+  };
+
+  it('labels pay from the previous job as salary, and says so', () => {
+    const t = applied().find((x) => x.merchant === 'Old Employer Ltd')!;
+    expect(t.categoryId).toBe('salary');
+    expect(t.reason).toMatch(/previous job/);
+  });
+
+  it('plans only on the current job, and lists the previous one', () => {
+    const all = applied();
+    const p = buildIncomeProfile(all, cats, detectRecurring(all, cats, asOf), asOf);
+    expect(p.streams.map((s) => s.label)).toEqual(['New Employer Ltd']);
+    expect(p.past).toMatchObject([{ label: 'Old Employer Ltd', cadence: 'weekly', last: last(old), payments: 12 }]);
+    expect(p.irregularMonthly).toBe(0); // old wages are not "side income" to plan on
+  });
+});
+
+describe('shift pay that sometimes doubles', () => {
+  it('still counts as weekly pay when about half the weeks are a normal amount', () => {
+    const amounts = [250, 250, 252, 258, 258, 258, 615, 590, 560, 450, 258, 258, 178, 594, 557, 558, 408, 258, 446, 258, 258, 258].map((p) => p * 100);
+    const txns = amounts.map((a, i) => pay(addDays('2026-01-01', i * 7), a, 'Shift Agency Ltd'));
+    const [r] = detectRecurring(txns, cats, last(txns));
+    expect(r).toMatchObject({ merchant: 'Shift Agency Ltd', cadence: 'weekly', direction: 'in' });
+  });
+});

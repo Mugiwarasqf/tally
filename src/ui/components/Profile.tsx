@@ -88,7 +88,8 @@ export function ProfileForm({ onDone }: { onDone?: () => void }) {
       </div>
       {payCandidates.length > 0 && (
         <div className="field">
-          <span className="field__label">Which of these is your pay? Tick all that apply.</span>
+          <span className="field__label">Which of these is your pay? Tick all that apply, including previous jobs.</span>
+          <span className="field__hint">Changed jobs? Ticking past employers keeps your old months right. Only the amount above is planned on.</span>
           <div className="list">
             {payCandidates.map((g) => (
               <label key={g.mkey} className="pick">

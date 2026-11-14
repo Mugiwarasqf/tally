@@ -28,6 +28,8 @@ A payment is *recurring* when its gaps cluster around 7, 14, 30 or 365 days and 
 
 Without a profile, income is split into **regular streams** (counted in full) and **irregular** income (counted at half). A fortnightly pay is 26 payments a year, so most months have 2 paydays and two have **3**; expected income for a cycle counts the actual pay dates that fall inside it. With no budget set, the daily allowance comes straight from income minus savings, debt and fixed bills.
 
+**Changing jobs.** A payer that kept a steady rhythm and then stopped (`detectRecurring(..., { includeEnded: true })`) is a previous job: its payments are labelled salary in the months they arrived, listed as "Before that" on the income cards, and never counted in plans or in irregular income. Shift pay is accepted as weekly or fortnightly when at least half the payments sit near the usual amount, because a week that pays double (overtime, two weeks at once) is normal.
+
 **One-offs.** Categories in `ONE_OFF` (government & legal: visa fees, fines) count in what was spent but never in "usual" spending, budget suggestions or the history comparison. "Usual" per category is the median month once there are three, so one strange month doesn't set the level.
 
 ## 5. Budget to save (`analytics/cuts.ts`)

@@ -9,6 +9,7 @@ import { DEFAULT_CATEGORIES } from '../../../src/domain/categorize/categories';
 import { buildTxns } from '../../../src/domain/import/build';
 import { isHsbcStatement, parseHsbc } from '../../../src/domain/import/hsbc';
 import { readPdf } from '../../../src/domain/import/pdf';
+import { isRevolutStatement, parseRevolut } from '../../../src/domain/import/revolut';
 import type { Txn } from '../../../src/domain/types';
 
 /**
@@ -17,7 +18,7 @@ import type { Txn } from '../../../src/domain/types';
  * Prints only; nothing personal is written anywhere.
  */
 const dir = process.env.TALLY_SAMPLES;
-const files = dir && fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /Basic Bank_Statement\.pdf$/i.test(f)).sort() : [];
+const files = dir && fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => /statement.*\.pdf$/i.test(f)).sort() : [];
 const money = (p: number) => `£${(Math.abs(p) / 100).toFixed(2)}`;
 
 describe.skipIf(files.length === 0)('categorisation audit on real statements', () => {
@@ -28,10 +29,10 @@ describe.skipIf(files.length === 0)('categorisation audit on real statements', (
     const holders: string[] = [];
     for (const f of files) {
       const pages = await readPdf(new Uint8Array(fs.readFileSync(path.join(dir!, f))), pdfjs as never);
-      expect(isHsbcStatement(pages)).toBe(true);
-      const s = parseHsbc(pages);
+      const s = isHsbcStatement(pages) ? parseHsbc(pages) : isRevolutStatement(pages) ? parseRevolut(pages) : null;
+      if (!s) continue;
       if (s.account.holder && !holders.includes(s.account.holder)) holders.push(s.account.holder);
-      all = all.concat(buildTxns(s, 'acct', f, { rules: [], holders }));
+      all = all.concat(buildTxns(s, s.bank, f, { rules: [], holders }));
     }
     const seen = new Set<string>();
     all = all.filter((t) => (seen.has(t.id) ? false : (seen.add(t.id), true)));
@@ -55,7 +56,7 @@ describe.skipIf(files.length === 0)('categorisation audit on real statements', (
     lines.push('--- recurring ---');
     for (const r of detectRecurring(all, cats, asOf)) lines.push(`${r.direction} ${r.cadence.padEnd(11)} ${money(r.amount).padStart(9)} ${r.merchant} (${r.categoryId}) ×${r.dates.length} next ${r.nextDate}`);
     const inc = buildIncomeProfile(all, cats, detectRecurring(all, cats, asOf), asOf);
-    lines.push('--- income ---', JSON.stringify({ streams: inc.streams.map((s) => [s.label, s.cadence, money(s.amount), s.dates.length]), expectedMonthly: money(inc.expectedMonthly), irregularMonthly: money(inc.irregularMonthly) }));
+    lines.push('--- income ---', JSON.stringify({ streams: inc.streams.map((s) => [s.label, s.cadence, money(s.amount), s.dates.length]), expectedMonthly: money(inc.expectedMonthly), irregularMonthly: money(inc.irregularMonthly), past: inc.past.map((p) => [p.label, p.cadence, money(p.amount), p.first, p.last, p.payments]) }));
     // TALLY_AUDIT_OUT=<file> writes the table there (outside the repo) when the runner swallows console output.
     if (process.env.TALLY_AUDIT_OUT) {
       fs.writeFileSync(process.env.TALLY_AUDIT_OUT, lines.join('\n'));

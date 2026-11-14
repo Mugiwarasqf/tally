@@ -29,6 +29,8 @@ export interface Recurring {
   change?: { from: Pence; to: Pence };
   /** Marked as recurring by the user rather than detected. */
   pinned?: boolean;
+  /** It kept a steady rhythm, then stopped (a cancelled subscription, a previous job). Only with `includeEnded`. */
+  ended?: boolean;
 }
 
 const median = (xs: number[]): number => {
@@ -61,8 +63,11 @@ export function stepDate(last: ISODate, c: Cadence): ISODate {
  *
  * `asOf` should be the last day your statements cover, not today: with stale statements,
  * today would make every payment look lapsed.
+ *
+ * With `includeEnded`, rhythms that stopped are returned too, flagged `ended` (used to recognise pay from a
+ * previous job, which was real pay while it lasted).
  */
-export function detectRecurring(txns: Txn[], cats: CatMap, asOf: ISODate): Recurring[] {
+export function detectRecurring(txns: Txn[], cats: CatMap, asOf: ISODate, opts: { includeEnded?: boolean } = {}): Recurring[] {
   const groups = new Map<string, Txn[]>();
   for (const t of txns) {
     const kind = kindOf(t, cats);
@@ -88,12 +93,18 @@ export function detectRecurring(txns: Txn[], cats: CatMap, asOf: ISODate): Recur
     const amounts = days.map((t) => Math.abs(t.amount));
     const med = median(amounts);
     const spread = Math.sqrt(amounts.reduce((s, a) => s + (a - med) ** 2, 0) / amounts.length) / (med || 1);
-    // Weekly or fortnightly pay for shift workers varies with hours, so income gets a looser amount test.
+    // Weekly or fortnightly pay for shift workers varies with hours, and an occasional week pays double (overtime,
+    // two weeks at once). So for income, ask instead whether at least half the payments sit near the usual amount;
+    // the steady rhythm checked above is what rules out irregular transfers.
     const looseIncome = key.startsWith('in:') && (cad.id === 'weekly' || cad.id === 'fortnightly');
-    if (spread > (looseIncome ? 0.6 : 0.35)) continue;
+    if (looseIncome) {
+      const near = amounts.filter((a) => Math.abs(a - med) <= med * 0.5).length / amounts.length;
+      if (spread > 0.6 && near < 0.5) continue;
+    } else if (spread > 0.35) continue;
     const last = days.at(-1)!;
     const next = stepDate(last.date, cad.id);
-    if (diffDays(next, asOf) > mg * 2) continue; // lapsed
+    const ended = diffDays(next, asOf) > mg * 2;
+    if (ended && !opts.includeEnded) continue;
     const prev = days.at(-2)!;
     const change = Math.abs(Math.abs(last.amount) - Math.abs(prev.amount)) / (Math.abs(prev.amount) || 1) > 0.05
       ? { from: Math.abs(prev.amount), to: Math.abs(last.amount) }
@@ -104,6 +115,7 @@ export function detectRecurring(txns: Txn[], cats: CatMap, asOf: ISODate): Recur
       amount: Math.round(med), lastDate: last.date, nextDate: next, occurrences: days.length,
       dates: days.map((t) => t.date), gap: mg,
       annual: Math.round(med * cad.per), change,
+      ...(ended ? { ended: true } : {}),
     });
   }
   return out.sort((a, b) => a.nextDate.localeCompare(b.nextDate));

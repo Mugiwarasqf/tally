@@ -6,7 +6,7 @@ import { history, suggestBudgets } from '../domain/analytics/budget';
 import type { LineView } from '../domain/analytics/budget';
 import { DEBT } from '../domain/categorize/categories';
 import type { Category } from '../domain/types';
-import { addMonths, cycleLabel } from '../lib/dates';
+import { addMonths, cycleLabel, fmtDay } from '../lib/dates';
 import { fmt } from '../lib/money';
 import { bucketOf } from '../domain/categorize/categories';
 import { saveSettings } from '../data/settings';
@@ -208,6 +208,18 @@ function IncomeCard() {
               <span className="row__end row__amount">{fmt(s.amount, { whole: true })}</span>
             </div>
           ))}
+        </div>
+      )}
+      {income.past.length > 0 && (
+        <div className="list">
+          {income.past.map((p) => (
+            <div className="row" key={p.mkey}>
+              <IconTile name="Briefcase" tone="ink" size="sm" />
+              <span className="row__main"><span className="row__title muted">{p.label}</span><span className="row__sub">Previous job · {RHYTHM[p.cadence].toLowerCase()} · {fmtDay(p.first)} – {fmtDay(p.last)}</span></span>
+              <span className="row__end row__amount muted">{fmt(p.amount, { whole: true })}</span>
+            </div>
+          ))}
+          <p className="t-xs">Pay from previous jobs stays as income in the months it arrived, but is never planned on.</p>
         </div>
       )}
       <dl className="sum">
