@@ -1,0 +1,22 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+
+# Real bank statements and exports must never be committed.
+# Keep local samples in samples/ (ignored) and use synthetic fixtures in tests/.
+samples/
+*.pdf
+*.ofx
+*.qif
+*.csv
+!tests/fixtures/*.csv
+
+# Environment / secrets
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/

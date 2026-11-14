@@ -1,0 +1,124 @@
+/* Reset, document defaults and the typographic scale. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation; /* no double-tap zoom; pinch-zoom stays available for accessibility */
+}
+
+/* Phones zoom the whole page when a focused field's text is smaller than 16px.
+   Every field keeps at least 16px so tapping into one never zooms. */
+input, select, textarea {
+  font-size: max(1rem, 16px);
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-normal);
+  font-optical-sizing: auto;
+  font-feature-settings: 'kern', 'liga';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4, p, figure, ul, ol, dl, dd { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+img, svg { display: block; max-width: 100%; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: 0; padding: 0; }
+a { color: inherit; text-decoration: none; }
+table { border-collapse: collapse; width: 100%; }
+::selection { background: var(--mint-wash); }
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+/* ---- type roles ------------------------------------------------------------- */
+.t-hero {
+  font-size: var(--fs-hero);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-hero);
+  line-height: var(--lh-tight);
+  font-variant-numeric: proportional-nums; /* display figures stay proportional; tabular is for columns */
+}
+.t-display {
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-display);
+  line-height: var(--lh-tight);
+  font-variant-numeric: proportional-nums;
+}
+.t-stat {
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tr-display);
+  line-height: var(--lh-tight);
+  font-variant-numeric: proportional-nums;
+}
+.t-title {
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tr-title);
+  line-height: var(--lh-snug);
+}
+.t-h2 {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tr-title);
+  line-height: var(--lh-snug);
+}
+.t-label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-snug);
+  color: var(--ink-2);
+}
+.t-small { font-size: var(--fs-sm); color: var(--ink-2); line-height: var(--lh-snug); }
+.t-xs { font-size: var(--fs-xs); color: var(--ink-3); line-height: var(--lh-snug); }
+.t-eyebrow {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tr-caps);
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.num { font-variant-numeric: tabular-nums lining-nums; } /* use in columns that must align */
+.muted { color: var(--ink-3); }
+.pos { color: var(--good-text); }
+.neg { color: var(--ink); }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Forced-colours / high-contrast: keep borders and focus visible. */
+@media (forced-colors: active) {
+  .card, .btn, .chip, .field { border: 1px solid CanvasText; }
+}

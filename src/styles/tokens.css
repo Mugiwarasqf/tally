@@ -1,0 +1,300 @@
+/*
+ * Design tokens — the single source of truth for type, space, shape and colour.
+ *
+ * Case study behind the choices (see docs/03-design-system.md):
+ *  - Type: Plus Jakarta Sans, one family. Tested against nine alternatives for tabular
+ *    figures; chosen for its confident geometric numerals at display sizes.
+ *  - Colour: "Forest & Mint" on warm paper. Chart hues come from a validated 8-slot
+ *    categorical palette and are re-validated against these exact surfaces.
+ */
+
+:root {
+  /* ---- type ---------------------------------------------------------------- */
+  --font: 'Plus Jakarta Sans Variable', 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --fs-2xs: 0.6875rem; /* 11 */
+  --fs-xs: 0.75rem; /* 12 */
+  --fs-sm: 0.8125rem; /* 13 */
+  --fs-base: 0.9375rem; /* 15 */
+  --fs-md: 1rem; /* 16 */
+  --fs-lg: 1.125rem; /* 18 */
+  --fs-xl: 1.375rem; /* 22 */
+  --fs-2xl: 1.75rem; /* 28 */
+  --fs-3xl: 2.25rem; /* 36 */
+  --fs-hero: clamp(2.75rem, 2.1rem + 3vw, 4.25rem); /* 44 → 68 */
+
+  --lh-tight: 1.08;
+  --lh-snug: 1.3;
+  --lh-normal: 1.5;
+
+  --tr-hero: -0.045em;
+  --tr-display: -0.03em;
+  --tr-title: -0.018em;
+  --tr-caps: 0.07em;
+
+  --fw-regular: 450;
+  --fw-medium: 550;
+  --fw-semibold: 650;
+  --fw-bold: 750;
+
+  /* ---- space (4px grid) ------------------------------------------------------ */
+  --s-1: 0.25rem;
+  --s-2: 0.5rem;
+  --s-3: 0.75rem;
+  --s-4: 1rem;
+  --s-5: 1.25rem;
+  --s-6: 1.5rem;
+  --s-8: 2rem;
+  --s-10: 2.5rem;
+  --s-12: 3rem;
+  --s-16: 4rem;
+
+  --gutter: var(--s-4);
+  --page-max: 76rem;
+
+  /* ---- shape ---------------------------------------------------------------- */
+  --r-xs: 0.5rem;
+  --r-sm: 0.75rem;
+  --r-md: 1rem;
+  --r-lg: 1.375rem;
+  --r-xl: 1.75rem;
+  --r-pill: 999px;
+
+  /* ---- motion --------------------------------------------------------------- */
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur-1: 120ms;
+  --dur-2: 220ms;
+  --dur-3: 420ms;
+
+  /* ---- layout metrics -------------------------------------------------------- */
+  --rail-w: 15.5rem;
+  --rail-w-compact: 4.75rem;
+  --topbar-h: 4.25rem;
+  --nav-h: 4.5rem;
+
+  /* ======================= colour: LIGHT (default) ======================= */
+  color-scheme: light;
+
+  --paper: #f5f2ea; /* page plane */
+  --surface: #fcfbf7; /* cards and chart surface (validated) */
+  --surface-2: #f1eee5; /* wells, hover, inputs */
+  --sunken: #ebe7db;
+
+  --ink: #111a16;
+  --ink-2: #46514b;
+  --ink-3: #66716b;
+
+  --line: rgba(17, 26, 22, 0.09);
+  --line-strong: rgba(17, 26, 22, 0.17);
+  --grid: #e6e2d6; /* chart hairlines */
+  --axis: #c9c5b8;
+
+  /* Brand */
+  --brand: #0e3b2f; /* forest: primary actions, hero */
+  --brand-hover: #155340;
+  --on-brand: #f5f2ea;
+  --mint: #9be7c0; /* highlight on dark/forest surfaces */
+  --mint-wash: rgba(155, 231, 192, 0.3);
+  --focus: #1f8a64;
+
+  /* Hero card */
+  --hero-bg: linear-gradient(150deg, #0e3b2f 0%, #0b2f26 62%, #082820 100%);
+  --hero-ink: #f5f2ea;
+  --hero-ink-2: rgba(245, 242, 234, 0.72);
+  --hero-track: rgba(245, 242, 234, 0.16);
+
+  /* Status (reserved — never used for categories). Always paired with an icon + label. */
+  --good: #0ca30c;
+  --good-text: #006300;
+  --good-bg: rgba(12, 163, 12, 0.11);
+  --warn: #fab219;
+  --warn-text: #7a5200;
+  --warn-bg: rgba(250, 178, 25, 0.2);
+  --serious: #ec835a;
+  --serious-text: #9c3f1c;
+  --serious-bg: rgba(236, 131, 90, 0.17);
+  --critical: #d03b3b;
+  --critical-text: #b02a2a;
+  --critical-bg: rgba(208, 59, 59, 0.11);
+
+  /* Categorical chart slots (validated, fixed order) */
+  --c1: #2a78d6;
+  --c2: #eb6834;
+  --c3: #1baf7a;
+  --c4: #eda100;
+  --c5: #e87ba4;
+  --c6: #008300;
+  --c7: #6250d6;
+  --c8: #e34948;
+  --c-other: #98a29c;
+  --bar: #1f7a5e; /* single-series bars (ranked lists); 5:1 on the light surface */
+  --on-c: #ffffff;
+  --on-c4: #111a16; /* near-black on yellow */
+
+  /* Sequential (blue ramp) for heat maps */
+  --seq-1: #cde2fb;
+  --seq-2: #9ec5f4;
+  --seq-3: #6da7ec;
+  --seq-4: #3987e5;
+  --seq-5: #256abf;
+  --seq-6: #184f95;
+  --seq-7: #0d366b;
+
+  /* Diverging (change vs previous) */
+  --div-up: #d03b3b; /* spending went up */
+  --div-down: #2a78d6; /* spending went down */
+
+  /* Elevation */
+  --shadow-1: 0 1px 2px rgba(17, 26, 22, 0.05), 0 0 0 1px var(--line);
+  --shadow-2: 0 10px 30px -12px rgba(17, 26, 22, 0.18), 0 2px 8px rgba(17, 26, 22, 0.05), 0 0 0 1px var(--line);
+  --shadow-3: 0 24px 60px -20px rgba(17, 26, 22, 0.3), 0 4px 14px rgba(17, 26, 22, 0.08), 0 0 0 1px var(--line);
+  --scrim: rgba(17, 26, 22, 0.42);
+  --glass: rgba(252, 251, 247, 0.82);
+}
+
+/* ======================= colour: DARK ======================= */
+/* Declared under both scopes: the media query follows the OS; the attribute is the in-app toggle. */
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme='light'])) {
+    color-scheme: dark;
+
+    --paper: #0b110f;
+    --surface: #131b18;
+    --surface-2: #1a2420;
+    --sunken: #0f1613;
+
+    --ink: #eef2ee;
+    --ink-2: #b4c0b9;
+    --ink-3: #8c9992;
+
+    --line: rgba(255, 255, 255, 0.085);
+    --line-strong: rgba(255, 255, 255, 0.17);
+    --grid: #223029;
+    --axis: #34443b;
+
+    --brand: #9be7c0;
+    --brand-hover: #b6efd3;
+    --on-brand: #0e3b2f;
+    --mint: #9be7c0;
+    --mint-wash: rgba(155, 231, 192, 0.14);
+    --focus: #9be7c0;
+
+    --hero-bg: linear-gradient(150deg, #14513f 0%, #0e3b2f 60%, #0a2e25 100%);
+
+    --good: #0ca30c;
+    --good-text: #5fd35f;
+    --good-bg: rgba(12, 163, 12, 0.18);
+    --warn-text: #fab219;
+    --warn-bg: rgba(250, 178, 25, 0.16);
+    --serious-text: #f0a483;
+    --serious-bg: rgba(236, 131, 90, 0.17);
+    --critical: #e25a5a;
+    --critical-text: #f08a8a;
+    --critical-bg: rgba(226, 90, 90, 0.16);
+
+    --c1: #3987e5;
+    --c2: #d95926;
+    --c3: #199e70;
+    --c4: #c98500;
+    --c5: #d55181;
+    --c6: #008300;
+    --c7: #9085e9;
+    --c8: #e66767;
+    --c-other: #6d7a73;
+  --bar: #5fcf9f;
+
+    --seq-1: #0d366b;
+    --seq-2: #104281;
+    --seq-3: #184f95;
+    --seq-4: #1c5cab;
+    --seq-5: #2a78d6;
+    --seq-6: #5598e7;
+    --seq-7: #86b6ef;
+    --div-up: #e66767;
+    --div-down: #5598e7;
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--line);
+    --shadow-2: 0 14px 34px -14px rgba(0, 0, 0, 0.7), 0 0 0 1px var(--line);
+    --shadow-3: 0 28px 64px -20px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--line);
+    --scrim: rgba(0, 0, 0, 0.6);
+    --glass: rgba(19, 27, 24, 0.82);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --paper: #0b110f;
+  --surface: #131b18;
+  --surface-2: #1a2420;
+  --sunken: #0f1613;
+
+  --ink: #eef2ee;
+  --ink-2: #b4c0b9;
+  --ink-3: #8c9992;
+
+  --line: rgba(255, 255, 255, 0.085);
+  --line-strong: rgba(255, 255, 255, 0.17);
+  --grid: #223029;
+  --axis: #34443b;
+
+  --brand: #9be7c0;
+  --brand-hover: #b6efd3;
+  --on-brand: #0e3b2f;
+  --mint: #9be7c0;
+  --mint-wash: rgba(155, 231, 192, 0.14);
+  --focus: #9be7c0;
+
+  --hero-bg: linear-gradient(150deg, #14513f 0%, #0e3b2f 60%, #0a2e25 100%);
+
+  --good: #0ca30c;
+  --good-text: #5fd35f;
+  --good-bg: rgba(12, 163, 12, 0.18);
+  --warn-text: #fab219;
+  --warn-bg: rgba(250, 178, 25, 0.16);
+  --serious-text: #f0a483;
+  --serious-bg: rgba(236, 131, 90, 0.17);
+  --critical: #e25a5a;
+  --critical-text: #f08a8a;
+  --critical-bg: rgba(226, 90, 90, 0.16);
+
+  --c1: #3987e5;
+  --c2: #d95926;
+  --c3: #199e70;
+  --c4: #c98500;
+  --c5: #d55181;
+  --c6: #008300;
+  --c7: #9085e9;
+  --c8: #e66767;
+  --c-other: #6d7a73;
+  --bar: #5fcf9f;
+
+  --seq-1: #0d366b;
+  --seq-2: #104281;
+  --seq-3: #184f95;
+  --seq-4: #1c5cab;
+  --seq-5: #2a78d6;
+  --seq-6: #5598e7;
+  --seq-7: #86b6ef;
+  --div-up: #e66767;
+  --div-down: #5598e7;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--line);
+  --shadow-2: 0 14px 34px -14px rgba(0, 0, 0, 0.7), 0 0 0 1px var(--line);
+  --shadow-3: 0 28px 64px -20px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--line);
+  --scrim: rgba(0, 0, 0, 0.6);
+  --glass: rgba(19, 27, 24, 0.82);
+}
+
+@media (min-width: 48rem) {
+  :root {
+    --gutter: var(--s-6);
+  }
+}
+/* Large monitors: use more of the width, with roomier gutters. */
+@media (min-width: 100rem) {
+  :root {
+    --page-max: 90rem;
+    --gutter: var(--s-8);
+  }
+}

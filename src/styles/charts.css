@@ -1,0 +1,85 @@
+/* Chart marks and chrome. Thin marks, solid hairline grid, recessive axes, ink-coloured text. */
+
+.chart { position: relative; width: 100%; }
+.chart svg { display: block; overflow: visible; }
+/* Fill mode: the svg is taken out of flow so it can't resize its own container. */
+.chart--fill { flex: 1; }
+.chart--fill svg { position: absolute; left: 0; top: 0; }
+.chart-card { gap: var(--s-4); }
+
+.grid-line { stroke: var(--grid); stroke-width: 1; }
+.axis-line { stroke: var(--axis); stroke-width: 1; }
+.tick { fill: var(--ink-3); font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums lining-nums; }
+.tick--strong { fill: var(--ink-2); font-weight: 650; }
+.tick--value { fill: var(--ink); font-size: 12px; font-weight: 700; paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
+
+.refline line { stroke: var(--ink-3); stroke-width: 1.5; stroke-dasharray: 2 5; stroke-linecap: round; }
+
+/* columns */
+.col { outline: none; transition: opacity var(--dur-1) var(--ease); }
+.col path { transition: filter var(--dur-1) var(--ease); }
+.col.is-dim { opacity: 0.45; }
+.col:focus-visible rect { stroke: var(--focus); stroke-width: 2; rx: 6; }
+.col:hover path, .col:focus-visible path { filter: brightness(1.06); }
+
+/* lines */
+.line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.line--proj { stroke-dasharray: 1 6; opacity: 0.85; } /* projection reads as "not yet real" */
+.dot { stroke: var(--surface); stroke-width: 2; paint-order: stroke; }
+.crosshair { stroke: var(--ink-3); stroke-width: 1; }
+
+/* heat map */
+.hm-cell { transition: opacity var(--dur-1) var(--ease); outline: none; }
+.hm-cell.is-hover { stroke: var(--ink); stroke-width: 1.5; }
+.hm-cell:focus-visible { stroke: var(--focus); stroke-width: 2; }
+.scale { display: flex; align-items: center; gap: 4px; justify-content: flex-end; margin-top: var(--s-3); }
+.scale i { width: 1.125rem; height: 0.625rem; border-radius: 3px; }
+.scale .t-xs { margin-inline: 4px; }
+
+/* sparkline */
+.spark__line { fill: none; stroke: var(--ink-3); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.spark__dot { fill: var(--brand); stroke: var(--surface); stroke-width: 2; paint-order: stroke; }
+
+/* tooltip: values lead, names follow */
+.tip {
+  position: absolute;
+  z-index: 5;
+  min-width: 9rem;
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-md);
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: var(--shadow-3);
+  pointer-events: none;
+  font-size: var(--fs-sm);
+}
+.tip__title { font-size: var(--fs-xs); font-weight: var(--fw-semibold); opacity: 0.7; margin-bottom: var(--s-2); }
+.tip__row { display: flex; align-items: center; gap: var(--s-2); line-height: 1.6; }
+.tip__key { width: 0.75rem; height: 3px; border-radius: 2px; flex: none; }
+.tip__val { font-weight: var(--fw-bold); font-variant-numeric: tabular-nums lining-nums; }
+.tip__name { opacity: 0.72; }
+
+/* ranked bars */
+.rbars { display: flex; flex-direction: column; }
+.rbar { display: flex; align-items: center; gap: var(--s-3); width: 100%; padding: var(--s-3) 0; text-align: left; border-radius: var(--r-md); }
+button.rbar { padding-inline: var(--s-2); margin-inline: calc(var(--s-2) * -1); width: calc(100% + var(--s-4)); transition: background var(--dur-1) var(--ease); }
+button.rbar:hover { background: var(--surface-2); }
+.rbar__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.rbar__line { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3); }
+.rbar__label { font-weight: var(--fw-semibold); letter-spacing: -0.005em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rbar__value { font-weight: var(--fw-semibold); }
+.rbar__track { position: relative; height: 0.5rem; border-radius: var(--r-pill); background: var(--sunken); overflow: visible; }
+.rbar__track i { position: absolute; inset: 0 auto 0 0; border-radius: var(--r-pill); background: var(--bar); transition: width var(--dur-3) var(--ease); }
+.rbar__track b { position: absolute; top: -3px; bottom: -3px; width: 2px; border-radius: 2px; background: var(--ink-2); }
+.rbar__sub { font-size: var(--fs-xs); color: var(--ink-3); }
+
+.segwrap { display: flex; flex-direction: column; gap: var(--s-3); }
+
+/* chart table twin */
+.chart-table { max-height: 20rem; overflow-y: auto; }
+
+/* income flow */
+.flow__ribbon { transition: opacity var(--dur-1) var(--ease); outline: none; }
+.flow__ribbon:focus-visible { stroke: var(--focus); stroke-width: 2; }
+.flow__source { fill: var(--ink-3); }
+.flow__name { fill: var(--ink); font-size: 12px; font-weight: 600; }
