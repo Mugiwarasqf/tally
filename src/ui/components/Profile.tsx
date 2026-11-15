@@ -8,6 +8,7 @@ import { fmt } from '../../lib/money';
 import { Icon } from '../icons';
 import { MoneyInput, Segmented, Switch } from './bits';
 import { useToast } from './overlay';
+import { everyday } from '../../lib/region';
 
 type Cadence = NonNullable<Profile['payCadence']>;
 const CARD = new Set(['VIS', ')))', 'ATM']);
@@ -48,7 +49,7 @@ export function ProfileForm({ onDone }: { onDone?: () => void }) {
   // Candidate landlords: bank-transfer payments near the declared rent, plus anything already labelled housing.
   const rentCandidates = useMemo(() => {
     const debits = groupBy(txns.filter((t) => t.amount < 0 && !CARD.has(t.type) && t.catSource !== 'own' && !t.mkey.startsWith('acct ')));
-    return debits.filter((g) => g.mkey === rentKey || g.categoryId === 'housing' || (rent > 0 && Math.abs(g.typical - rent) <= Math.max(100, rent * 0.05))).slice(0, 6);
+    return debits.filter((g) => g.mkey === rentKey || g.categoryId === 'housing' || (rent > 0 && Math.abs(g.typical - rent) <= Math.max(everyday(1), rent * 0.05))).slice(0, 6);
   }, [txns, rent, rentKey]);
 
   const save = async () => {
@@ -78,7 +79,7 @@ export function ProfileForm({ onDone }: { onDone?: () => void }) {
       <div className="profile__grid">
         <div className="field">
           <label htmlFor="pay">Take-home pay, per payslip</label>
-          <MoneyInput id="pay" value={pay} onChange={setPay} placeholder="e.g. 450" />
+          <MoneyInput id="pay" value={pay} onChange={setPay} placeholder={`e.g. ${(everyday(450) / 100).toLocaleString('en-GB')}`} />
           <span className="field__hint">What actually lands in your account. If it varies a little, use a typical week.</span>
         </div>
         <div className="field">
@@ -107,7 +108,7 @@ export function ProfileForm({ onDone }: { onDone?: () => void }) {
       <div className="profile__grid">
         <div className="field">
           <label htmlFor="rent">Rent, per month</label>
-          <MoneyInput id="rent" value={rent} onChange={setRent} placeholder="e.g. 500" />
+          <MoneyInput id="rent" value={rent} onChange={setRent} placeholder={`e.g. ${(everyday(500) / 100).toLocaleString('en-GB')}`} />
           <span className="field__hint">Leave at 0 if you don’t pay rent.</span>
         </div>
         <label className="split">

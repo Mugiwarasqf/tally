@@ -91,7 +91,7 @@ export function BudgetSavings() {
           {plan.debt > 0 && <div><dt>Debt payments</dt><dd>−{fmt(plan.debt, { whole: true })}</dd></div>}
           <div className="verdict__key"><dt>You can spend</dt><dd>{fmt(Math.max(0, plan.spendable), { whole: true })}</dd></div>
           <div><dt>You usually spend</dt><dd>{fmt(plan.typicalSpend, { whole: true })}</dd></div>
-          <div className={`verdict__key ${plan.need > 0 ? 'is-need' : 'is-ok'}`}><dt>{plan.need > 0 ? 'To cut' : 'Already on track'}</dt><dd>{plan.need > 0 ? fmt(plan.need, { whole: true }) : '£0'}</dd></div>
+          <div className={`verdict__key ${plan.need > 0 ? 'is-need' : 'is-ok'}`}><dt>{plan.need > 0 ? 'To cut' : 'Already on track'}</dt><dd>{plan.need > 0 ? fmt(plan.need, { whole: true }) : fmt(0, { whole: true })}</dd></div>
         </dl>
       )}
 

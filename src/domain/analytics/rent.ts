@@ -4,6 +4,7 @@ import type { TxnPatch } from '../import/pair';
 import type { Profile, Txn } from '../types';
 import type { CatMap } from './aggregate';
 import { detectRecurring } from './recurring';
+import { everyday } from '../../lib/region';
 
 /**
  * Rent, found by its fingerprint rather than by a keyword.
@@ -13,8 +14,9 @@ import { detectRecurring } from './recurring';
  * month), and usually the biggest regular outgoing. If exactly one payment fits, and nothing else explains it,
  * it's labelled as housing — with modest confidence, so it lands in the review queue for you to confirm.
  */
-const MIN_RENT: number = 30_000; // £300
-const MAX_RENT: number = 400_000; // £4,000
+// A monthly rent between £300 and £4,000 (scaled for the region's currency).
+const MIN_RENT = (): number => everyday(300);
+const MAX_RENT = (): number => everyday(4000);
 const CARD = new Set([')))', 'VIS', 'ATM']);
 const LOCKED = new Set(['manual', 'rule', 'learned', 'dictionary']);
 
@@ -40,7 +42,7 @@ function findDeclaredRent(txns: Txn[], amount: number): RentCandidate | null {
   const groups = new Map<string, Txn[]>();
   for (const t of txns) {
     if (t.amount >= 0 || CARD.has(t.type) || t.catSource === 'own' || t.mkey.startsWith('acct ')) continue;
-    if (Math.abs(-t.amount - amount) > Math.max(100, amount * 0.02)) continue;
+    if (Math.abs(-t.amount - amount) > Math.max(everyday(1), amount * 0.02)) continue;
     groups.set(t.mkey, [...(groups.get(t.mkey) ?? []), t]);
   }
   let best: RentCandidate | null = null;
@@ -68,7 +70,7 @@ export function findRent(txns: Txn[], cats: CatMap, asOf: ISODate, profile?: Pro
     if (series.some((t) => CARD.has(t.type))) continue; // rent isn't paid by card
     const amounts = series.map((t) => -t.amount);
     const m = median(amounts);
-    if (m < MIN_RENT || m > MAX_RENT) continue;
+    if (m < MIN_RENT() || m > MAX_RENT()) continue;
     if ((Math.max(...amounts) - Math.min(...amounts)) / m > 0.03) continue; // rent doesn't vary
     const days = series.map((t) => Number(t.date.slice(8, 10)));
     const day = median(days);

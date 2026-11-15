@@ -47,5 +47,5 @@ The first row is never counted as proof when there is no printed opening balance
 ## Limits
 
 - Scanned (image-only) PDFs have no text to read; the user is pointed to a downloaded PDF or CSV.
-- One currency per import: amounts in `$`/`€` are not read as pounds.
+- One currency per device. A statement in another currency than the region's is stopped at import (see `07-regions.md`, which also covers the layouts learned from Nigerian statements).
 - Statements with no balance column can be imported, but only after the user confirms the columns, and they show as not reconciled.

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useApp } from '../app/data';
 import { navigate } from '../app/router';
 import { setDemo } from '../data/db';
@@ -18,6 +18,8 @@ import { RankedBars } from '../ui/charts/Bars';
 import { ColumnChart } from '../ui/charts/Columns';
 import { ChartCard, ChartTable, Legend } from '../ui/charts/core';
 import { FlowChart, SINK_COLOR } from '../ui/charts/Flow';
+import { everyday } from '../lib/region';
+import { RegionPicker, guessRegion, regionLine } from '../ui/components/RegionPicker';
 
 export function Home() {
   const { txns } = useApp();
@@ -81,7 +83,7 @@ function Dashboard() {
     const rent = settings.profile?.rentAmount;
     if (!rent) return [];
     return app.history
-      .filter((m) => m.complete && !txns.some((t) => t.date >= m.start && t.date <= m.end && t.amount < 0 && t.categoryId === 'housing' && Math.abs(-t.amount - rent) <= Math.max(100, rent * 0.05)))
+      .filter((m) => m.complete && !txns.some((t) => t.date >= m.start && t.date <= m.end && t.amount < 0 && t.categoryId === 'housing' && Math.abs(-t.amount - rent) <= Math.max(everyday(1), rent * 0.05)))
       .map((m) => m.label);
   }, [app.history, txns, settings.profile?.rentAmount]);
 
@@ -335,12 +337,23 @@ function Dashboard() {
 }
 
 function Onboarding() {
+  const { settings } = useApp();
+  const region = settings.region ?? guessRegion();
+  // Keep the first guess (from the device's time zone) so what is highlighted is what is used.
+  useEffect(() => {
+    if (!settings.region) void saveSettings({ region });
+  }, [settings.region, region]);
   return (
     <div className="onboard">
       <section className="hero onboard__hero">
         <span className="t-eyebrow">Welcome to Tally</span>
         <h2 className="t-display onboard__title">Your money, finally in one picture.</h2>
         <p className="onboard__lead">Drop in your bank statements. Tally reads them on this device, finds your pay, sorts every payment, and turns it into a budget and a debt plan that actually fits.</p>
+        <div className="onboard__region">
+          <span className="t-eyebrow">Where do you bank?</span>
+          <RegionPicker value={region} />
+          <span className="t-small">{regionLine(region)}</span>
+        </div>
         <div className="cluster">
           <a className="btn btn--mint" href="#/import"><Icon name="UploadSimple" size={20} weight="bold" />Import a statement</a>
           <button className="btn btn--on-hero" onClick={() => setDemo(true)}><Icon name="Sparkle" size={18} />Explore with sample data</button>
@@ -348,7 +361,7 @@ function Onboarding() {
       </section>
       <div className="steps">
         {[
-          { icon: 'FilePdf', t: 'Attach statements', d: 'HSBC PDFs, plus CSV, OFX or QIF from any bank. Add as many months as you like.' },
+          { icon: 'FilePdf', t: 'Attach statements', d: 'PDF statements from most banks, or CSV, OFX and QIF. Add as many months as you like.' },
           { icon: 'Briefcase', t: 'Income first', d: 'Weekly, fortnightly or monthly pay is spotted by its rhythm, and everything you spend is drawn from it.' },
           { icon: 'Target', t: 'Plan the month', d: 'A daily allowance, budgets, and a repayment plan for any debt you owe.' },
           { icon: 'ShieldCheck', t: 'Private by design', d: 'Nothing is uploaded. Your data lives in this browser and nowhere else.' },

@@ -8,6 +8,8 @@ export interface RawTxn {
   balance?: Pence; // end-of-day balance, when the statement prints one on this row
   type: string; // bank's payment-type code (VIS, TFR, BP, ...) or '' for CSV
   lines: string[]; // description lines in statement order
+  time?: string; // "HH:MM", when the statement prints a time
+  ref?: string; // the bank's own reference for the row, when printed (fees share it with their payment)
 }
 
 export interface Check {
@@ -22,7 +24,7 @@ export type SourceFormat = 'pdf-hsbc' | 'pdf-revolut' | 'pdf-generic' | 'csv' | 
 export interface ParsedStatement {
   bank: string;
   format: SourceFormat;
-  account: { holder?: string; sortCode?: string; number?: string; label?: string };
+  account: { holder?: string; sortCode?: string; number?: string; label?: string; /** One of several accounts printed in the same statement ("Savings Account"). */ section?: string };
   periodStart?: ISODate;
   periodEnd?: ISODate;
   opening?: Pence;

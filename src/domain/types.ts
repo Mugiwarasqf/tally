@@ -1,6 +1,7 @@
 // The core data model. Pure types — no storage or UI code lives here.
 import type { ISODate } from '../lib/dates';
 import type { Pence } from '../lib/money';
+import type { RegionId } from '../lib/region';
 
 export type CategoryKind = 'expense' | 'income' | 'transfer' | 'saving' | 'debt';
 
@@ -154,6 +155,8 @@ export interface DebtPlanSettings {
 /** Where you live, for rent comparisons. */
 
 export interface Settings {
+  /** Where the user banks: currency sign, date order, bank and merchant names. Unset means the UK (the original default). */
+  region?: RegionId;
   monthStartDay: number;
   theme: 'system' | 'light' | 'dark';
   /** What the user told us directly (profile step). Declared facts beat detection. */

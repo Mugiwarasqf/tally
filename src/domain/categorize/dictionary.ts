@@ -129,3 +129,56 @@ export const DICTIONARY: CompiledDict[] = D.map(([p, name, category, dir, confid
   dir,
   confidence: confidence ?? 0.92,
 }));
+
+/**
+ * Region packs, checked before the list above when that region is active. National chains, networks, utilities
+ * and services only; no local shops or people (those are learned from each user's choices).
+ */
+const NG: DictEntry[] = [
+  // phone, data, TV
+  ['^AIRTIME\\b|^MOBILE DATA\\b|\\bMTN\\b|\\bAIRTEL\\b|\\bGLO(?:BACOM)?\\b|\\b9MOBILE\\b|SPECTRANET|SMILE COMM|\\bSWIFT NETWORKS', null, 'bills', 'out'],
+  ['\\bDSTV\\b|\\bGOTV\\b|STARTIMES|MULTICHOICE', null, 'subscriptions', 'out'],
+  ['SHOWMAX|BOOMPLAY|AUDIOMACK|NETFLIX|SPOTIFY|APPLE MUSIC|YOUTUBE', null, 'subscriptions', 'out'],
+  // electricity distribution companies and prepaid meters
+  ['ELECTRICITY|PREPAID METER|\\bIKEDC\\b|IKEJA ELECTRIC|\\bEKEDC\\b|EKO ELECTRIC|\\bAEDC\\b|ABUJA ELECTRIC|\\bPHED\\b|PORT HARCOURT ELECTRIC|\\bIBEDC\\b|IBADAN ELECTRIC|\\bEEDC\\b|ENUGU ELECTRIC|\\bBEDC\\b|BENIN ELECTRIC|\\bKEDCO\\b|KANO ELECTRIC|\\bJED\\b|JOS ELECTRIC|\\bKAEDCO\\b|\\bYEDC\\b', null, 'bills', 'out'],
+  ['\\bLAWMA\\b|WATER CORPORATION|WATER BOARD', null, 'bills', 'out'],
+  // betting
+  ['BET9JA|SPORTYBET|BETKING|1XBET|NAIRABET|MSPORT|BANGBET|MERRYBET|BETWAY|ACCESSBET|LIVESCORE ?BET|PARIPESA|22BET|BETLION', null, 'entertainment', 'out'],
+  // transport
+  ['\\bBOLT\\b|\\bUBER\\b|INDRIVE|\\bRIDA\\b|LAGRIDE|GIG MOBILITY|ABC TRANSPORT|GOD IS GOOD MOTORS|\\bGUO\\b|PEACE MASS|\\bCOWRY\\b|\\bLAMATA\\b|\\bBRT\\b', null, 'transport', 'out'],
+  ['AIR PEACE|ARIK|IBOM AIR|UNITED NIGERIA|\\bOVERLAND AIR|VALUEJET|GREEN AFRICA|\\bMAX AIR', null, 'travel', 'out'],
+  ['\\bNNPC\\b|\\bTOTAL ?ENERGIES\\b|\\bMRS OIL|\\bCONOIL\\b|\\bARDOVA\\b|\\bOANDO\\b|\\bFILLING STATION|\\bPETROL\\b|\\bFUEL\\b', null, 'transport', 'out'],
+  // food
+  ['CHOWDECK|GLOVO|JUMIA FOOD|HEYFOOD|FOODCOURT', null, 'eating-out', 'out'],
+  ['CHICKEN REPUBLIC|MR ?BIGGS|TANTALIZERS|KILIMANJARO|SWEET SENSATION|THE PLACE|DOMINO|COLD STONE|KFC|BURGER KING|CHICKEN REP|ITALIAN PIZZA|DODO PIZZA|BUKKA', null, 'eating-out', 'out'],
+  ['SHOPRITE|\\bSPAR\\b|JUSTRITE|MARKET SQUARE|EBEANO|HUBMART|PRINCE EBEANO|ADDIDE|FOODCO|SUPERMARKET', null, 'groceries', 'out'],
+  // shopping
+  ['\\bJUMIA\\b|\\bKONGA\\b|SLOT SYSTEMS|\\bSLOT\\b|POINTEK|3CHUB|TEMU|SHEIN|ALIEXPRESS', null, 'shopping', 'out'],
+  // health, education, government
+  ['PHARMACY|HEALTHPLUS|MEDPLUS|HOSPITAL|CLINIC|\\bHMO\\b|RELIANCE HMO|HYGEIA|AXA MANSARD', null, 'health', 'out'],
+  ['\\bWAEC\\b|\\bJAMB\\b|\\bNECO\\b|UNIVERSITY|POLYTECHNIC|SCHOOL FEES|COLLEGE', null, 'education', 'out'],
+  ['\\bFIRS\\b|\\bLIRS\\b|\\bFRSC\\b|\\bNIMC\\b|IMMIGRATION|PASSPORT|\\bREMITA\\b|\\bVIO\\b', null, 'gov', 'out'],
+  // savings and investing
+  ['PIGGYVEST|PIGGYBANK\\.NG|COWRYWISE|RISEVEST|\\bRISE VEST|BAMBOO|TROVE|CHAKA|\\bCARBON SAVINGS|KUDA SAVE|PALMPAY SAVINGS', null, 'savings', 'out'],
+  // loans
+  ['FAIRMONEY|BRANCH INTERNATIONAL|CARBON LOAN|\\bPALMCREDIT|\\bOKASH\\b|\\bEASYBUY\\b|\\bRENMONEY|\\bAELLA|QUICKCHECK|\\bLOAN REPAY', null, 'debt', 'out'],
+  // remittances coming in
+  ['LEMFI|LEMONADE FINANCE|\\bWISE\\b|REMITLY|WORLDREMIT|SENDWAVE|TAPTAP|WESTERN UNION|MONEYGRAM|AFRIEX|CHIPPER|GREY FINANCE|NALA', null, 'from-people', 'in', 0.7],
+];
+
+const US: DictEntry[] = [
+  ['VENMO|ZELLE|CASH APP|SQUARE CASH', null, 'family', 'out', 0.6],
+  ['WALMART|TARGET|KROGER|COSTCO|WHOLE ?FOODS|TRADER JOE|SAFEWAY|PUBLIX|ALBERTSONS|\\bH-?E-?B\\b|\\bMEIJER\\b|FOOD LION|GIANT EAGLE|WEGMANS|\\bALDI\\b|SAM\'?S CLUB', null, 'groceries', 'out'],
+  ['\\bCVS\\b|WALGREENS|RITE AID', null, 'health', 'out'],
+  ['VERIZON|AT&T|\\bATT\\b|T-?MOBILE|COMCAST|XFINITY|SPECTRUM|COX COMM|\\bPG&E\\b|CON ?ED|DUKE ENERGY', null, 'bills', 'out'],
+  ['GEICO|PROGRESSIVE|STATE FARM|ALLSTATE|LIBERTY MUTUAL', null, 'bills', 'out'],
+  ['\\bLYFT\\b|\\bUBER\\b|\\bSHELL\\b|CHEVRON|EXXON|MOBIL|\\bBP\\b|SUNOCO|SPEEDWAY|\\bWAWA\\b', null, 'transport', 'out'],
+  ['DOORDASH|GRUBHUB|POSTMATES|UBER ?EATS|CHIPOTLE|TACO BELL|CHICK-?FIL-?A|STARBUCKS|DUNKIN|PANERA|WENDY|MCDONALD|SUBWAY', null, 'eating-out', 'out'],
+  ['HULU|HBO ?MAX|\\bMAX\\.COM|PEACOCK|PARAMOUNT|NETFLIX|SPOTIFY|DISNEY', null, 'subscriptions', 'out'],
+  ['SALLIE MAE|NAVIENT|NELNET|MOHELA|AFFIRM|AFTERPAY|DISCOVER CARD|AMEX EPAYMENT|CAPITAL ONE', null, 'debt', 'out'],
+  ['\\bIRS\\b|TREAS 310|\\bSSA\\b', null, 'benefits', 'in'],
+  ['PAYROLL|DIRECT DEP|\\bADP\\b|GUSTO|PAYCHEX', null, 'salary', 'in', 0.85],
+];
+
+const compile = (d: DictEntry[]): CompiledDict[] => d.map(([p, name, category, dir, confidence]) => ({ re: new RegExp(p), name, category, dir, confidence: confidence ?? 0.92 }));
+export const REGION_DICTIONARY: Partial<Record<'uk' | 'ng' | 'us', CompiledDict[]>> = { ng: compile(NG), us: compile(US) };

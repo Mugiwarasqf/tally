@@ -28,6 +28,7 @@ import { computeAlerts } from '../domain/alerts/engine';
 import { buildPlan, plannedFor } from '../domain/debt/plan';
 import type { PlanView } from '../domain/debt/plan';
 import { addDays } from '../lib/dates';
+import { setRegion } from '../lib/region';
 import type { Account, AlertItem, BudgetLine, Category, Debt, ImportedFile, MonthPlan, ReportSnapshot, Rule, Settings, Txn } from '../domain/types';
 
 export interface AppData {
@@ -94,7 +95,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [seeded, setSeeded] = useState(false);
   useEffect(() => {
     void ensureSeed().then(async () => {
-      applyTheme((await loadSettings()).theme);
+      const s = await loadSettings();
+      setRegion(s.region);
+      applyTheme(s.theme);
       setSeeded(true);
     });
   }, []);
@@ -123,6 +126,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const alerts = alertsQ ?? [];
   const reports = reportsQ ?? [];
   const settings = settingsQ ?? DEFAULT_SETTINGS;
+  // Money formatting and amount thresholds read the region; set it before anything below renders a figure.
+  setRegion(settings.region);
   const startDay = settings.monthStartDay;
 
   const today = todayISO();

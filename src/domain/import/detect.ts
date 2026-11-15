@@ -1,8 +1,8 @@
 import { parseCsvRows, analyseCsv } from './csv';
 import type { CsvAnalysis } from './csv';
 import { isHsbcStatement, parseHsbc } from './hsbc';
-import { analysePdf } from './generic';
-import type { PdfAnalysis, PdfLayout } from './generic';
+import { analysePdfSections } from './generic';
+import type { Currency, PdfAnalysis, PdfLayout } from './generic';
 import { parseOfx } from './ofx';
 import { readPdfInBrowser } from './pdf';
 import { parseQif } from './qif';
@@ -18,6 +18,10 @@ export interface FileRead {
   parsed: ParsedStatement | null;
   csv?: CsvAnalysis;
   pdf?: PdfAnalysis;
+  /** Currency the file is in, when known. */
+  currency?: Currency;
+  /** Further accounts printed in the same PDF (a wallet's savings pot), each read on its own. */
+  more?: FileRead[];
 }
 
 export const ACCEPTED = '.pdf,.csv,.ofx,.qfx,.qif,.txt';
@@ -30,11 +34,11 @@ export async function readStatementFile(file: File, bytes: ArrayBuffer, layouts:
   if (ext === 'pdf') {
     const pages = await readPdfInBrowser(bytes);
     if (!pages.some((p) => p.length)) throw new ImportError('This PDF has no readable text. Scanned (image-only) statements are not supported — download the PDF from online banking instead, or export a CSV.');
-    if (isHsbcStatement(pages)) return { parsed: parseHsbc(pages) };
-    if (isRevolutStatement(pages)) return { parsed: parseRevolut(pages) };
+    if (isHsbcStatement(pages)) return { parsed: parseHsbc(pages), currency: 'GBP' };
+    if (isRevolutStatement(pages)) return { parsed: parseRevolut(pages), currency: 'GBP' };
     // Any other bank: read the table generically. Only a reading the printed balance proves goes straight through.
-    const pdf = analysePdf(pages, { saved: layouts });
-    return { parsed: pdf.result.verified ? pdf.result.parsed : null, pdf };
+    const reads: FileRead[] = analysePdfSections(pages, { saved: layouts }).map((pdf) => ({ parsed: pdf.result.verified ? pdf.result.parsed : null, pdf, currency: pdf.currency }));
+    return { ...reads[0]!, more: reads.slice(1) };
   }
   if (ext === 'ofx' || ext === 'qfx') return { parsed: parseOfx(text()) };
   if (ext === 'qif') return { parsed: parseQif(text(), label) };

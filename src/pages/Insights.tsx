@@ -5,6 +5,7 @@ import { byCategory, topMerchants } from '../domain/analytics/aggregate';
 import { categoryChanges, dailySpend, weekdayPattern } from '../domain/analytics/insights';
 import { addDays, cycleLabel, diffDays, fmtDay, fmtDayYear } from '../lib/dates';
 import { fmt } from '../lib/money';
+import { everyday } from '../lib/region';
 import { CardHead, CatTile, Empty } from '../ui/components/bits';
 import { PeriodPill } from '../ui/components/Period';
 import { Icon } from '../ui/icons';
@@ -42,7 +43,7 @@ export function Insights() {
       <div className="bento">
         <section className="card span-7">
           <CardHead title="What changed" sub={`${cycleLabel(viewKey, startDay)} compared with the period before. Biggest movers in pounds.`} />
-          {changes.length === 0 ? <p className="t-small">Nothing moved by more than £5 in any category.</p> : (
+          {changes.length === 0 ? <p className="t-small">Nothing moved by more than {fmt(everyday(5), { whole: true })} in any category.</p> : (
             <ul className="diverge" aria-label="Change in spending by category">
               {changes.map((c) => {
                 const up = c.delta > 0;

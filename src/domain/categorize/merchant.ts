@@ -1,6 +1,7 @@
 import { DEFAULT_CATEGORIES } from './categories';
 import type { CompiledDict } from './dictionary';
-import { DICTIONARY } from './dictionary';
+import { DICTIONARY, REGION_DICTIONARY } from './dictionary';
+import { region } from '../../lib/region';
 
 const KIND = new Map(DEFAULT_CATEGORIES.map((c) => [c.id, c.kind]));
 /** Card payments: the second statement line is the merchant's registered city (Uber says "London" everywhere), not useful detail. */
@@ -69,7 +70,7 @@ export const slug = (s: string): string =>
  */
 export function lookup(haystack: string, amount: number): CompiledDict | undefined {
   const dir = amount >= 0 ? 'in' : 'out';
-  return DICTIONARY.find((d) => {
+  return [...(REGION_DICTIONARY[region().id] ?? []), ...DICTIONARY].find((d) => {
     if (d.dir) return d.dir === dir && d.re.test(haystack);
     if (dir === 'in' && KIND.get(d.category) === 'expense') return false;
     return d.re.test(haystack);

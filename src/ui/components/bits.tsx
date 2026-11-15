@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { fmt } from '../../lib/money';
+import { fmt, sym } from '../../lib/money';
 import type { Category } from '../../domain/types';
 import type { Status } from '../../domain/analytics/budget';
 import { Icon } from '../icons';
@@ -37,7 +37,7 @@ export function HeroMoney({ pence }: { pence: number }) {
   const p = String(abs % 100).padStart(2, '0');
   return (
     <span className="hero__figure t-hero" aria-label={fmt(pence)}>
-      <span aria-hidden="true">{neg ? '−' : ''}£{pounds}<small>.{p}</small></span>
+      <span aria-hidden="true">{neg ? '−' : ''}{sym()}{pounds}<small>.{p}</small></span>
     </span>
   );
 }
@@ -130,7 +130,7 @@ export function Segmented<T extends string>({ value, options, onChange, label, w
 export function MoneyInput({ value, onChange, id, placeholder }: { value: number; onChange: (pence: number) => void; id?: string; placeholder?: string }) {
   return (
     <span className="input-wrap">
-      <span className="input-wrap__prefix">£</span>
+      <span className="input-wrap__prefix">{sym()}</span>
       <input
         id={id} className="input input--money" inputMode="decimal" placeholder={placeholder ?? '0.00'}
         defaultValue={value ? (value / 100).toFixed(2).replace(/\.00$/, '') : ''}

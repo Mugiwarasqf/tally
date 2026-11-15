@@ -19,6 +19,7 @@ import { Spark } from '../ui/charts/Spark';
 import { TrendChart } from '../ui/charts/Trend';
 import { Waterfall } from '../ui/charts/Waterfall';
 import { Import } from './Import';
+import { everyday } from '../lib/region';
 
 const tone = (grade: string) => `g-${grade[0]!.toLowerCase()}`;
 const DIM_ORDER: DimKey[] = ['history', 'spending', 'categories', 'savings', 'debt', 'bills'];
@@ -207,7 +208,7 @@ export function Report() {
               <div className="gradehero__side">
                 <span className="t-stat">{card.overall.score}<small>/100</small></span>
                 <span className="t-small">{card.actual <= card.planned ? 'Finished under plan' : 'Finished over plan'}: {fmt(card.actual, { whole: true })} against {fmt(card.planned, { whole: true })}</span>
-                {card.vsUsual !== null && Math.abs(card.vsUsual) >= 1000 && (
+                {card.vsUsual !== null && Math.abs(card.vsUsual) >= everyday(10) && (
                   <span className="chip chip--on-hero"><Icon name={card.vsUsual >= 0 ? 'PiggyBank' : 'TrendUp'} size={14} weight="fill" />{fmt(Math.abs(card.vsUsual), { whole: true })} {card.vsUsual >= 0 ? 'below' : 'above'} your usual spending</span>
                 )}
                 {card.previous && (

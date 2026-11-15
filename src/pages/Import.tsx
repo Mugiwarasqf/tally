@@ -15,6 +15,11 @@ import type { ParsedStatement } from '../domain/import/types';
 import { addDays, diffDays, fmtDay, fmtDayYear } from '../lib/dates';
 import { sha256Hex, uid } from '../lib/hash';
 import { fmt } from '../lib/money';
+import { region, REGIONS } from '../lib/region';
+import type { RegionId } from '../lib/region';
+import { saveSettings } from '../data/settings';
+import type { Currency } from '../domain/import/generic';
+import type { FileRead } from '../domain/import/detect';
 import { Banner, CardHead, Empty, IconTile } from '../ui/components/bits';
 import { Sheet, useToast } from '../ui/components/overlay';
 import { Icon } from '../ui/icons';
@@ -23,7 +28,10 @@ interface Candidate {
   id: string;
   file: File;
   hash: string;
-  state: 'reading' | 'ready' | 'needs-mapping' | 'error' | 'duplicate' | 'done';
+  state: 'reading' | 'ready' | 'needs-mapping' | 'error' | 'duplicate' | 'done' | 'wrong-currency';
+  currency?: Currency;
+  /** Which account inside the PDF, when it holds several ("Savings Account"). */
+  section?: string;
   parsed?: ParsedStatement;
   csv?: CsvAnalysis;
   pdf?: PdfAnalysis;
@@ -59,16 +67,25 @@ export function Import() {
         if (dup) { patch(c.id, { hash, state: 'duplicate', duplicateOf: dup.name }); continue; }
         const r = await readStatementFile(c.file, bytes, layouts);
         const accts = await db.accounts.toArray();
-        let account = 'new';
-        if (r.parsed) {
-          const key = accountKey(r.parsed);
-          account = accts.find((a) => a.key === key)?.id ?? (!r.parsed.format.startsWith('pdf') && accts.length === 1 ? accts[0]!.id : 'new');
-        }
-        patch(c.id, {
-          hash, parsed: r.parsed ?? undefined, csv: r.csv, pdf: r.pdf, account,
-          accountName: r.parsed ? (r.parsed.account.number ? `${r.parsed.bank} ····${r.parsed.account.number.slice(-4)}` : r.parsed.account.label ?? c.file.name.replace(/\.[^.]+$/, '')) : c.file.name.replace(/\.[^.]+$/, ''),
-          state: r.parsed ? 'ready' : 'needs-mapping',
-        });
+        const fields = (x: FileRead): Partial<Candidate> => {
+          let account = 'new';
+          if (x.parsed) {
+            const key = accountKey(x.parsed);
+            account = accts.find((a) => a.key === key)?.id ?? (!x.parsed.format.startsWith('pdf') && accts.length === 1 ? accts[0]!.id : 'new');
+          }
+          const section = x.pdf?.multi ? x.pdf.account.label : undefined;
+          const bank = x.parsed?.bank ?? x.pdf?.bank;
+          return {
+            parsed: x.parsed ?? undefined, csv: x.csv, pdf: x.pdf, account, currency: x.currency, section,
+            accountName: section && bank ? `${bank} ${section}` : x.parsed ? (x.parsed.account.number ? `${x.parsed.bank} ····${x.parsed.account.number.slice(-4)}` : x.parsed.account.label ?? c.file.name.replace(/\.[^.]+$/, '')) : c.file.name.replace(/\.[^.]+$/, ''),
+            // A statement in another currency would be added up as if it were in this one: stop it here.
+            state: x.currency && x.currency !== region().currency ? 'wrong-currency' : x.parsed ? 'ready' : 'needs-mapping',
+          };
+        };
+        patch(c.id, { hash, ...fields(r) });
+        // Further accounts in the same PDF become their own cards, right after this one.
+        const extra: Candidate[] = (r.more ?? []).map((x, k) => ({ id: uid(), file: c.file, hash: `${hash}#${k + 2}`, account: 'new', accountName: '', state: 'reading', ...fields(x) }) as Candidate);
+        if (extra.length) setItems((s) => s.flatMap((x) => (x.id === c.id ? [x, ...extra] : [x])));
       } catch (e) {
         // Say why: a bare "could not be read" hid a browser incompatibility once.
         const why = e instanceof Error && e.message ? ` (${e.name}: ${e.message.slice(0, 160)})` : '';
@@ -227,7 +244,7 @@ function CandidateCard({ c, accounts, patch, onRemove }: { c: Candidate; account
           <IconTile name={icon} tone="ink" />
           <div style={{ minWidth: 0 }}>
             <div className="row__title">{c.file.name}</div>
-            <div className="t-xs">{size(c.file.size)}{p ? ` · ${p.bank}` : ''}</div>
+            <div className="t-xs">{size(c.file.size)}{p ? ` · ${p.bank}` : ''}{c.section ? ` · ${c.section}` : ''}</div>
           </div>
         </div>
         {c.state !== 'done' && <button className="icon-btn" onClick={onRemove} aria-label={`Remove ${c.file.name} from the list`}><Icon name="X" size={18} /></button>}
@@ -236,6 +253,7 @@ function CandidateCard({ c, accounts, patch, onRemove }: { c: Candidate; account
       {c.state === 'reading' && <p className="t-small"><Icon name="Clock" size={16} /> Reading…</p>}
       {c.state === 'duplicate' && <Banner tone="warn" icon="Info">Already imported as <strong>{c.duplicateOf}</strong>. Nothing to do.</Banner>}
       {c.state === 'error' && <Banner tone="critical" icon="WarningCircle">{c.error}</Banner>}
+      {c.state === 'wrong-currency' && c.currency && <CurrencyBanner currency={c.currency} />}
       {c.state === 'done' && <Banner tone="good" icon="CheckCircle">Added <strong>{c.result!.added}</strong>{c.result!.skipped ? `, skipped ${c.result!.skipped} you already had` : ''}.</Banner>}
 
       {c.state === 'needs-mapping' && c.csv && (
@@ -288,6 +306,23 @@ function CandidateCard({ c, accounts, patch, onRemove }: { c: Candidate; account
         </>
       )}
     </article>
+  );
+}
+
+const REGION_FOR: Partial<Record<Currency, RegionId>> = { GBP: 'uk', NGN: 'ng', USD: 'us' };
+
+/** The statement is in another currency than the one Tally is set to. Offer the matching region, never mix them. */
+function CurrencyBanner({ currency }: { currency: Currency }) {
+  const target = REGION_FOR[currency];
+  const r = target ? REGIONS[target] : null;
+  return (
+    <Banner
+      tone="warn" icon="Coins"
+      action={r && <button className="btn btn--secondary btn--sm" onClick={async () => { await saveSettings({ region: r.id }); location.reload(); }}>Switch to {r.name} ({r.symbol})</button>}
+    >
+      <strong>This statement is in {currency}.</strong> Tally is set to {region().name} ({region().symbol}), and amounts are never converted.
+      {r ? ' Switch region, then add the file again.' : ' Tally can’t track this currency yet.'}
+    </Banner>
   );
 }
 

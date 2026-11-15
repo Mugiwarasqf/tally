@@ -1,9 +1,11 @@
 import { addDays, addMonths, cycleRange, diffDays, dow } from '../../lib/dates';
 import type { ISODate } from '../../lib/dates';
+import { fmt } from '../../lib/money';
 import type { Pence } from '../../lib/money';
 import type { Txn } from '../types';
 import { byCategory, kindOf } from './aggregate';
 import type { CatMap } from './aggregate';
+import { everyday } from '../../lib/region';
 
 export interface CategoryChange {
   categoryId: string;
@@ -12,7 +14,7 @@ export interface CategoryChange {
   delta: Pence;
 }
 
-/** Biggest movers between two cycles, by pounds (not percent, so £3 → £9 doesn't top the list). */
+/** Biggest movers between two cycles, by amount (not percent, so £3 → £9 doesn't top the list). */
 export function categoryChanges(txns: Txn[], cats: CatMap, key: string, startDay: number, limit = 6): CategoryChange[] {
   const part = (k: string) => {
     const { start, end } = cycleRange(k, startDay);
@@ -23,7 +25,7 @@ export function categoryChanges(txns: Txn[], cats: CatMap, key: string, startDay
   const ids = new Set([...cur.keys(), ...prev.keys()]);
   return [...ids]
     .map((id) => ({ categoryId: id, current: cur.get(id) ?? 0, previous: prev.get(id) ?? 0, delta: (cur.get(id) ?? 0) - (prev.get(id) ?? 0) }))
-    .filter((c) => Math.abs(c.delta) >= 500)
+    .filter((c) => Math.abs(c.delta) >= everyday(5))
     .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
     .slice(0, limit);
 }
@@ -55,12 +57,12 @@ export function findFlags(txns: Txn[], cats: CatMap, since: ISODate): Flag[] {
       if (earlier.length >= 4) {
         const sorted = [...earlier].sort((a, b) => a - b);
         const med = sorted[sorted.length >> 1]!;
-        if (-t.amount > med * 2.5 && -t.amount >= 2000) {
-          flags.push({ kind: 'unusual', txn: t, note: `Usually about £${(med / 100).toFixed(0)} here` });
+        if (-t.amount > med * 2.5 && -t.amount >= everyday(20)) {
+          flags.push({ kind: 'unusual', txn: t, note: `Usually about ${fmt(med, { whole: true })} here` });
         }
       }
       const prev = list[i - 1];
-      if (prev && prev.amount === t.amount && -t.amount >= 500 && diffDays(prev.date, t.date) <= 2 && !MONEY_CATS_SKIP.has(t.categoryId) && prev.id !== t.id) {
+      if (prev && prev.amount === t.amount && -t.amount >= everyday(5) && diffDays(prev.date, t.date) <= 2 && !MONEY_CATS_SKIP.has(t.categoryId) && prev.id !== t.id) {
         flags.push({ kind: 'double', txn: t, other: prev, note: 'Same amount charged twice within two days' });
       }
     }

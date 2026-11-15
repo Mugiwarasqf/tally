@@ -1,0 +1,58 @@
+# Regions: UK, Nigeria, US
+
+Tally started as a UK, pounds-only app. This note records how it now works for people banking in Nigeria (naira) or the US (dollars), and what was learned from real Nigerian statements.
+
+## Case study
+
+| Who | How they handle currency and country | Lesson for Tally |
+|---|---|---|
+| **YNAB** | Currency, number format and date format are chosen once per plan, at creation, and can be changed in plan settings. Amounts are never converted. | One currency per budget, picked up front, editable later. |
+| **Actual Budget** | A per-budget currency and number/date format setting. Multi-currency is not supported; people keep one budget per currency. | Mixing currencies in one set of totals is the thing to avoid. Refuse it rather than convert. |
+| **Wallet (BudgetBakers), Spendee** | Ask for a base currency on first run, guessed from the device. | Ask on first run, with a sensible pre-selection. |
+| **Nigerian banking apps** (OPay, ALAT, Kuda, GTBank) | Statements are PDFs, often with bank charges (COMM, VAT, stamp duty, SMS alerts) as separate rows, and transfers named "NIP transfer to … from …". | Charges and transfer narrations need their own reading, or every transfer looks like an unknown merchant. |
+
+**Decision.** One region per device: **UK (£)**, **Nigeria (₦)** or **US ($)**, chosen on the first screen (pre-selected from the device's time zone, read locally) and changeable in Settings. The region sets:
+
+- the currency sign everywhere (`fmt`, charts, inputs);
+- how an ambiguous date such as 03/04 is read (US: March 4; UK and Nigeria: 3 April);
+- the size of "everyday" amounts used by heuristics (`everyday()` in `src/lib/region.ts`): a "small purchase" is under £5, $5 or ₦5,000; budgets round to £5, $5 or ₦5,000;
+- which merchant pack is checked first (`REGION_DICTIONARY`), and, in Nigeria, the narration reader below.
+
+Amounts are never converted. A statement whose own text is in another currency is stopped at import, with a button to switch region.
+
+## Nigerian statements: what the generic PDF reader had to learn
+
+From one ALAT (Wema) and one OPay statement, read on the maintainer's machine only. Each is handled generally, not as a per-bank parser:
+
+| Seen | Handled by |
+|---|---|
+| `02 Nov 2026 11:04:01` (date and time), then a value date | The time is kept on the transaction; the second date is skipped. |
+| `03-Aug-` with `2026` on the line below | Dates split over two lines are joined. |
+| Description wrapped above **and** below the row with the amounts | "Blocks": when row gaps split into "inside a transaction" and "between transactions", and no block holds two amounts, each block is one transaction. Rare gap sizes are ignored when finding the split. |
+| `--` in empty money cells; Channel and Reference columns | Blank cells are dropped; only text under the Description heading is the description; the reference column becomes the transaction's `ref`. |
+| Summary boxes with labels above values (Opening Balance / Total Debit / Debit Count) | Values are read from the row below, lined up under each label. Those rows are kept out of the table. |
+| Printed totals and counts | A second proof next to the running balance ("Printed totals agree"). |
+| Rows from the same minute printed in the wrong order (a payment before the top-up that funded it) | When a balance doesn't follow but one of the next few same-day rows' does, that row is moved first. Only an exact balance match moves anything. |
+| A printed opening balance that is really the balance after the first row | If starting from the first row makes every later balance and the closing balance agree, the rows are trusted and a warning says so. |
+| Wallet and savings accounts in one PDF | Each "summary box with an opening balance" after transactions starts a new account; each gets its own card on the Import page and its own account. |
+| Bank named only in a footer web address (`alat.ng`), or not at all (OPay, identified by its "OWealth" product) | Web-address keys match anywhere; product names are a last resort. |
+
+Result on those statements: ALAT 55 transactions, OPay 237 (wallet) + 130 (savings), every one proved by the running balance, the closing balance and the printed totals and counts.
+
+## Nigerian narrations (`src/domain/categorize/narration.ts`)
+
+Only used in the Nigeria region. It turns the wording into the payment types the categoriser already knows:
+
+- **Charges**: COMM, VAT, stamp duty, EMTL, SMS alerts, card and account maintenance → *Fees & charges*, each a clearly named merchant. A charge is linked to the payment it was taken on (same bank reference, or a same-day payment whose description it repeats), shown as "On …" in its details.
+- **Interest** (`Int.Pd`, "Interest Earned") → *Interest*; **withholding tax** (`WTax.Pd`) → *Fees & charges*.
+- **Transfers** (`NIP TRANSFER TO X FROM Y`, `NIP:NAME-note`, `Transfer to NAME | Bank | account`): the other person's name becomes the payee, so your own accounts are recognised and payments to people go to the review queue once.
+- **Savings pots** (OWealth, CashBox, auto-save) → own-account transfers.
+- **Airtime, data, betting, electricity** bill payments are named by network or provider.
+- **POS agents** ("Transfer to POS Transfer - NAME"): cash or a shop? Always asked once.
+- **Reversals**: the money that came back takes the category of the payment it reverses, so the two cancel out.
+
+## Limits
+
+- Password-protected PDFs (GTBank, Zenith) are not read yet. Planned: ask for the password on the device and pass it to pdf.js.
+- Excel statements are not read yet.
+- One currency per device; a dollar account held by a Nigerian user is not supported.

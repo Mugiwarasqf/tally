@@ -14,6 +14,7 @@ import { CategorySheet } from '../ui/components/CategoryPicker';
 import { ProfileForm } from '../ui/components/Profile';
 import { Sheet, useConfirm, useToast } from '../ui/components/overlay';
 import { Icon, PICKABLE } from '../ui/icons';
+import { RegionPicker, regionLine } from '../ui/components/RegionPicker';
 
 const KINDS: Array<{ value: CategoryKind; label: string }> = [
   { value: 'expense', label: 'Spending' }, { value: 'income', label: 'Income' }, { value: 'saving', label: 'Saving' },
@@ -64,6 +65,11 @@ export function Settings() {
       </section>
       <section className="card span-6">
         <CardHead title="General" />
+        <div className="field">
+          <span className="field__label">Where you bank</span>
+          <RegionPicker value={settings.region ?? 'uk'} reload />
+          <span className="field__hint">{regionLine(settings.region ?? 'uk')} Changing this does not convert amounts already imported.</span>
+        </div>
         <div className="field">
           <label htmlFor="startday">Month starts on day</label>
           <select id="startday" className="select" value={settings.monthStartDay} onChange={(e) => saveSettings({ monthStartDay: Number(e.target.value) })}>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { sym } from '../../lib/money';
 import type { ReactNode, RefObject } from 'react';
 import { Icon } from '../icons';
 
@@ -46,13 +47,14 @@ export function niceScale(max: number, target = 4): { top: number; ticks: number
   return { top, ticks };
 }
 
-/** Axis money: full figures below £10,000, compact above — one style per axis. */
+/** Axis money: full figures below 10,000, compact above — one style per axis. */
 export function axisMoney(p: number, compact: boolean): string {
   const v = p / 100;
   const sign = v < 0 ? '−' : '';
   const a = Math.abs(v);
-  if (compact) return `${sign}£${a >= 1e6 ? `${+(a / 1e6).toFixed(1)}m` : `${+(a / 1e3).toFixed(a >= 1e4 ? 0 : 1)}k`}`;
-  return `${sign}£${Math.round(a).toLocaleString('en-GB')}`;
+  const s = sym();
+  if (compact) return `${sign}${s}${a >= 1e9 ? `${+(a / 1e9).toFixed(1)}bn` : a >= 1e6 ? `${+(a / 1e6).toFixed(1)}m` : `${+(a / 1e3).toFixed(a >= 1e4 ? 0 : 1)}k`}`;
+  return `${sign}${s}${Math.round(a).toLocaleString('en-GB')}`;
 }
 
 // ---- tooltip -----------------------------------------------------------------------------

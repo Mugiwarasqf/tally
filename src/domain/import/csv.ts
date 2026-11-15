@@ -2,6 +2,7 @@ import Papa from 'papaparse';
 import { makeDate, monthIndex } from '../../lib/dates';
 import type { ISODate } from '../../lib/dates';
 import { parseMoney } from '../../lib/money';
+import { region } from '../../lib/region';
 import { ImportError } from './types';
 import type { ParsedStatement, RawTxn } from './types';
 
@@ -52,7 +53,7 @@ export function parseLooseDate(s: string, order: DateOrder): ISODate | null {
 }
 const fullYear = (y: string): number => (y.length === 2 ? 2000 + Number(y) : Number(y));
 
-/** Work out day/month order from the data itself; UK (dmy) wins when it's ambiguous. */
+/** Work out day/month order from the data itself; the region's usual order wins when it's ambiguous. */
 export function detectDateOrder(samples: string[]): DateOrder {
   let dmy = 0;
   let mdy = 0;
@@ -63,7 +64,7 @@ export function detectDateOrder(samples: string[]): DateOrder {
       if (Number(m[2]) > 12) mdy++;
     } else if (/^\d{4}[-/.]/.test(s.trim())) return 'ymd';
   }
-  return mdy > dmy ? 'mdy' : 'dmy';
+  return mdy > dmy ? 'mdy' : dmy > mdy ? 'dmy' : region().dateOrder;
 }
 
 export function analyseCsv(text: string): CsvAnalysis {

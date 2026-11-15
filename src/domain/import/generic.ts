@@ -1,6 +1,8 @@
 import { makeDate } from '../../lib/dates';
 import { fmt, parseMoney } from '../../lib/money';
 import type { Pence } from '../../lib/money';
+import { region } from '../../lib/region';
+import { bankFrom } from './banks';
 import { detectDateOrder } from './csv';
 import type { DateOrder } from './csv';
 import { groupRows, joinItems } from './rows';
@@ -25,11 +27,17 @@ import { ImportError } from './types';
  *     balance agrees. Only a reading the balance proves is called verified.
  *  4. Anything unverified goes to the user to confirm, with a live preview, and
  *     the confirmed layout can be remembered for that bank's next statement.
+ *
+ * Layouts seen in Nigerian statements (docs/07-regions.md) added: times after dates, dates split over two
+ * lines, descriptions printed above and below the amount, "label over value" summary boxes, printed totals
+ * and counts, rows from the same minute printed out of order, a wrong printed opening balance, and two
+ * accounts (wallet and savings) in one PDF.
  */
 
 export type MoneyRole = 'out' | 'in' | 'amount' | 'fee' | 'balance' | 'ignore';
 const MONEY_ROLES: MoneyRole[] = ['out', 'in', 'amount', 'fee', 'balance'];
 export type Anchor = 'right' | 'left' | 'centre';
+export type Currency = 'GBP' | 'NGN' | 'USD' | 'EUR';
 
 export interface MoneyColumn {
   edge: number;
@@ -56,22 +64,44 @@ interface DateParts {
 
 interface Line {
   page: number;
+  y: number;
   dateText: string;
-  text: string;
+  /** Description lines, top to bottom. Usually one; several when a block of rows was merged. */
+  texts: string[];
   money: Array<{ col: number; value: Pence }>;
   marker: 'bf' | 'cf' | 'total' | null;
+  time?: string;
+  ref?: string;
+}
+
+/** Facts a statement prints outside its table, in "label: value" or "label over value" form. */
+export interface Facts {
+  opening?: Pence;
+  closing?: Pence;
+  totalIn?: Pence;
+  totalOut?: Pence;
+  countIn?: number;
+  countOut?: number;
+  holder?: string;
+  number?: string;
 }
 
 export interface PdfAnalysis {
   bank: string;
-  account: { sortCode?: string; number?: string };
+  account: { sortCode?: string; number?: string; holder?: string; label?: string };
+  /** Currency the statement's own text uses, when it shows one. */
+  currency?: Currency;
   anchor: Anchor;
   columns: MoneyColumn[];
   dateOrder: DateOrder;
   /** Description first and amount on the last line ('last'), or amount on the first line ('first'). */
   style: 'first' | 'last';
+  /** True when each transaction was a block of rows (description above and below the amount). */
+  blocks: boolean;
+  /** True when this is one of several accounts printed in the same PDF. */
+  multi: boolean;
   lines: Line[];
-  outside: { opening?: Pence; closing?: Pence; years: number[] };
+  outside: { opening?: Pence; closing?: Pence; years: number[] } & Facts;
   fallbackYear: number;
   /** Best assignment found, and whether a saved layout supplied it. */
   roles: MoneyRole[];
@@ -89,9 +119,11 @@ export interface PdfReading {
 // ---- tokens ----------------------------------------------------------------------------------
 
 const MONEY_RE = /^[-+]?\(?-?(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}\)?(?:\s?(?:CR|DR|D|-))?$/i;
-const normMoney = (s: string) => s.trim().replace(/[−–]/g, '-').replace(/£\s?|GBP\s?/gi, '');
+const normMoney = (s: string) => s.trim().replace(/[−–]/g, '-').replace(/[£₦$€]\s?|(?:GBP|NGN|USD|EUR)\s?/gi, '');
 const isMoney = (s: string) => MONEY_RE.test(normMoney(s));
 const moneyValue = (s: string): Pence | null => parseMoney(normMoney(s));
+/** "--" or "—" printed in an empty money cell. */
+const isBlank = (s: string) => /^[-–—]{1,3}$/.test(s.trim());
 
 /** Merge items that touch (no visible gap): pdf.js often splits "£" or "-" from the number. */
 function mergeTouching(items: PdfItem[]): PdfItem[] {
@@ -106,6 +138,20 @@ function mergeTouching(items: PdfItem[]): PdfItem[] {
 }
 
 const pos = (it: PdfItem, a: Anchor) => (a === 'right' ? it.x + it.w : a === 'left' ? it.x : it.x + it.w / 2);
+
+/** Which currency the statement is written in, from the signs and codes it prints. */
+function currencyOf(pages: PdfPage[]): Currency | undefined {
+  const n: Record<Currency, number> = { GBP: 0, NGN: 0, USD: 0, EUR: 0 };
+  for (const p of pages) for (const it of p) {
+    const s = it.str;
+    n.NGN += (s.match(/₦|\bNGN\b/g) ?? []).length;
+    n.GBP += (s.match(/£|\bGBP\b/g) ?? []).length;
+    n.USD += (s.match(/\$|\bUSD\b/g) ?? []).length;
+    n.EUR += (s.match(/€|\bEUR\b/g) ?? []).length;
+  }
+  const best = (Object.keys(n) as Currency[]).sort((a, b) => n[b] - n[a])[0]!;
+  return n[best] > 0 ? best : undefined;
+}
 
 // ---- dates -----------------------------------------------------------------------------------
 
@@ -124,6 +170,8 @@ const D_ISO = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?![\w])/;
 const D_NAMED = /^(\d{1,2})(?:st|nd|rd|th)?[\s/.-]*([A-Za-z]{3,9}\.?)(?:[\s/.,-]+(\d{4}|\d{2}))?(?![\w])/;
 const D_MONTH_FIRST = /^([A-Za-z]{3,9}\.?)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?(?![\w])/;
 const D_NUM = /^(\d{1,2})([/.-])(\d{1,2})(?:\2(\d{4}|\d{2}))?(?![\w.])/;
+const TIME = /^(\d{1,2}):(\d{2})(?::\d{2})?(?:\s?([AaPp])\.?[Mm]\.?)?(?![\w:])/;
+const YEAR_ONLY = /^(?:19|20)\d{2}$/;
 const fullYear = (y: string) => (y.length === 2 ? 2000 + Number(y) : Number(y));
 
 /** The date a row starts with, as printed. Returns the matched text so it can be removed from the description. */
@@ -157,25 +205,39 @@ function dateParts(s: string, order: DateOrder): DateParts | null {
   return null;
 }
 
+/** "11:04:01" or "2:05 PM" at the start of the text, as 24-hour "HH:MM". */
+function leadingTime(text: string): { time: string; len: number } | null {
+  const m = TIME.exec(text);
+  if (!m) return null;
+  let h = Number(m[1]);
+  const ap = m[3]?.toLowerCase();
+  if (ap === 'p' && h < 12) h += 12;
+  if (ap === 'a' && h === 12) h = 0;
+  if (h > 23 || Number(m[2]) > 59) return null;
+  return { time: `${String(h).padStart(2, '0')}:${m[2]}`, len: m[0].length };
+}
+
 // ---- headings & markers ----------------------------------------------------------------------
 
-const HEAD: Array<[MoneyRole | 'date' | 'description', RegExp]> = [
+type HeadRole = MoneyRole | 'date' | 'description' | 'ref';
+const HEAD: Array<[HeadRole, RegExp]> = [
   ['amount', /\bin ?\/ ?out\b|\bout ?\/ ?in\b|paid in ?\/ ?out/i], // one signed column
   ['balance', /balance/i],
-  ['fee', /^(?:£ ?)?(?:fees?|charges?)$/i],
+  ['fee', /^(?:fees?|charges?)$/i],
   ['out', /paid ?out|money ?out|payments? ?out|debits?\b|withdrawals?|outgoings?|spent|^out$/i],
   ['in', /paid ?in|money ?in|payments? ?in|credits?\b|deposits?|incomings?|received|^in$/i],
-  ['amount', /amount|value/i],
+  ['amount', /amount|value$/i],
   ['date', /date/i],
-  ['description', /description|details|transaction|narrative|particulars|payee|reference/i],
+  ['ref', /^(?:transaction |trans\.? )?(?:reference|ref\.?)(?: ?(?:no\.?|number))?$|^(?:transaction|session) id$/i],
+  ['description', /description|details|transaction|narrative|narration|remarks?|particulars|payee|reference/i],
 ];
-const headRole = (s: string) => HEAD.find(([, re]) => re.test(s.replace(/£|\(|\)/g, '').trim()))?.[0] ?? null;
+const headRole = (s: string): HeadRole | null => HEAD.find(([, re]) => re.test(s.replace(/[£₦$€]|\(|\)/g, '').replace(/\s+/g, ' ').trim()))?.[0] ?? null;
 
 interface Phrase {
   str: string;
   x0: number;
   x1: number;
-  role: ReturnType<typeof headRole>;
+  role: HeadRole | null;
 }
 function phrases(items: PdfItem[]): Phrase[] {
   const out: Phrase[] = [];
@@ -192,30 +254,38 @@ function phrases(items: PdfItem[]): Phrase[] {
 const isHeader = (items: PdfItem[]) => {
   if (items.some((i) => isMoney(i.str))) return false;
   const roles = new Set(phrases(items).map((p) => p.role).filter(Boolean));
-  return roles.size >= 2 && MONEY_ROLES.some((r) => roles.has(r));
+  return roles.size >= 2 && MONEY_ROLES.some((r) => roles.has(r as MoneyRole));
 };
 
 const BF_RE = /brought forward|b\/f\b|opening balance|start(?:ing)? balance|previous balance|balance from previous/i;
 const CF_RE = /carried forward|c\/f\b|closing balance|end(?:ing)? balance|balance to next/i;
-const TOTAL_RE = /^(?:sub ?)?totals?\b/i;
+// "Total", "Sub total", and Zenith-style day footers such as "2 Debit(s) 1 Credit(s)".
+const TOTAL_RE = /^(?:sub ?)?totals?\b|^\d+\s*debits?(?:\(s\))?\s+\d+\s*credits?(?:\(s\))?/i;
 const markerOf = (text: string): Line['marker'] => (BF_RE.test(text) ? 'bf' : CF_RE.test(text) ? 'cf' : TOTAL_RE.test(text) ? 'total' : null);
 
-/** National banks and e-money firms only — never anything local or personal. */
-const BANKS: Array<[string, string]> = [
-  ['firstdirect', 'first direct'], ['hsbc', 'HSBC'], ['barclays', 'Barclays'], ['lloyds', 'Lloyds'], ['halifax', 'Halifax'],
-  ['bankofscotland', 'Bank of Scotland'], ['natwest', 'NatWest'], ['royalbankofscotland', 'Royal Bank of Scotland'],
-  ['ulsterbank', 'Ulster Bank'], ['santander', 'Santander'], ['nationwide', 'Nationwide'], ['monzo', 'Monzo'],
-  ['starling', 'Starling'], ['tsb', 'TSB'], ['metrobank', 'Metro Bank'], ['co-operativebank', 'Co-operative Bank'],
-  ['cooperativebank', 'Co-operative Bank'], ['virginmoney', 'Virgin Money'], ['chase', 'Chase'], ['revolut', 'Revolut'],
-  ['wise', 'Wise'], ['kroo', 'Kroo'], ['zopa', 'Zopa'], ['tide', 'Tide'], ['danske', 'Danske Bank'], ['coventrybuilding', 'Coventry BS'],
-  ['skiptonbuilding', 'Skipton BS'], ['yorkshirebuilding', 'Yorkshire BS'], ['clydesdale', 'Clydesdale Bank'], ['aib', 'AIB'],
-];
+// ---- summary boxes ---------------------------------------------------------------------------
 
-/**
- * Put each heading over its column. Headings are often left-aligned while amounts are
- * right-aligned, so for right-aligned money a heading must start at or before the
- * column's edge and end near it. One heading names one column: the nearest wins.
- */
+type FactKey = keyof Facts;
+const FACT_LABELS: Array<[FactKey, RegExp]> = [
+  ['opening', /^(?:opening|start(?:ing)?|previous) balance$|^balance (?:b\/f|brought forward)$/i],
+  ['closing', /^(?:closing|end(?:ing)?) balance$|^balance (?:c\/f|carried forward)$/i],
+  ['totalOut', /^total (?:debits?|withdrawals?|money out|paid out|payments out|outflows?|outgoings?)$/i],
+  ['totalIn', /^total (?:credits?|deposits?|lodgements?|money in|paid in|payments in|inflows?|incomings?)$/i],
+  ['countOut', /^(?:debit|withdrawal)s? count$|^(?:no\.?|number) of (?:debits|withdrawals)$/i],
+  ['countIn', /^(?:credit|deposit)s? count$|^(?:no\.?|number) of (?:credits|deposits|lodgements)$/i],
+  ['holder', /^(?:account name|account holder|customer name)$/i],
+  ['number', /^(?:account (?:number|no\.?)|nuban)$/i],
+];
+/** Labels that belong in a summary box even when Tally doesn't use their value. */
+const SUMMARY_WORDS = /^(?:current|available|effective available|cleared|uncleared|ledger|book) balance$|^(?:date printed|print date|statement date|start date|end date|period|account type|currency|sort ?code|branch|address|bvn)$/i;
+
+const factKey = (s: string): FactKey | null => {
+  const t = s.replace(/[£₦$€:]|\(|\)/g, '').replace(/\s+/g, ' ').trim();
+  return FACT_LABELS.find(([, re]) => re.test(t))?.[0] ?? null;
+};
+const isSummaryLabel = (s: string) => !!factKey(s) || SUMMARY_WORDS.test(s.replace(/[:()]/g, '').replace(/\s+/g, ' ').trim());
+
+/** Put each heading over its column (see docs/06). */
 function labelColumns(columns: MoneyColumn[], ph: Phrase[], anchor: Anchor): void {
   const near = (c: MoneyColumn, p: Phrase): number => {
     if (anchor === 'right') return p.x0 > c.edge ? Infinity : Math.max(0, c.edge - p.x1 - 6);
@@ -259,6 +329,11 @@ const median = (xs: number[], fallback: number) => {
   const s = [...xs].sort((a, b) => a - b);
   return s[Math.floor(s.length / 2)]!;
 };
+const quantile = (xs: number[], q: number, fallback: number) => {
+  if (!xs.length) return fallback;
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.min(s.length - 1, Math.floor(s.length * q))]!;
+};
 
 // ---- analysis --------------------------------------------------------------------------------
 
@@ -269,18 +344,133 @@ interface TRow {
   money: PdfItem[];
   text: string;
   date: string | null;
+  /** How many characters of `text` the date takes (the date may have gained a year from the line below). */
+  dateLen: number;
   header: boolean;
+  /** Part of a summary box (labels or their values), never part of the table. */
+  summary: boolean;
+  /** Facts read from this row's labels (with values on this row or the row below). */
+  facts: Facts;
+}
+
+/** Text columns named by the table heading: where descriptions and references sit. */
+interface TextSpans { desc?: [number, number]; ref?: [number, number] }
+function textSpans(hdr: TRow | null): TextSpans {
+  if (!hdr) return {};
+  const ph = phrases(hdr.items);
+  const span = (p: Phrase): [number, number] => {
+    const next = ph.filter((q) => q.x0 > p.x1).map((q) => q.x0);
+    return [p.x0 - 8, next.length ? Math.min(...next) - 2 : Infinity];
+  };
+  const desc = ph.find((p) => p.role === 'description');
+  const ref = ph.find((p) => p.role === 'ref');
+  if (!desc) return ref ? { desc: span(ref) } : {};
+  return { desc: span(desc), ref: ref ? span(ref) : undefined };
+}
+
+function buildRows(pages: PdfPage[]): TRow[][] {
+  const rows: TRow[][] = pages.map((page, pi) =>
+    groupRows(page).map((r: Row) => {
+      const items = mergeTouching(r.items).filter((i) => !isBlank(i.str));
+      return makeRow(pi, r.y, items);
+    }),
+  );
+  // Dates split over two lines ("03-Aug-" above "2026"): give the date its year and drop the year line's copy.
+  for (const pr of rows) {
+    pr.forEach((r, i) => {
+      if (!r.date || dateParts(r.date, 'dmy')?.y !== null) return;
+      const dx = r.items.find((it) => !r.money.includes(it))?.x ?? 0;
+      for (let j = i + 1; j < pr.length && r.y - pr[j]!.y <= 24; j++) {
+        const yr = pr[j]!.items.find((it) => YEAR_ONLY.test(it.str.trim()) && Math.abs(it.x - dx) <= 6);
+        if (!yr) continue;
+        r.date = `${r.date.replace(/[\s,/.-]+$/, '')} ${yr.str.trim()}`;
+        pr[j] = makeRow(pr[j]!.page, pr[j]!.y, pr[j]!.items.filter((it) => it !== yr));
+        break;
+      }
+    });
+  }
+  return rows;
+}
+
+function makeRow(page: number, y: number, items: PdfItem[]): TRow {
+  const money = items.filter((i) => isMoney(i.str));
+  const text = joinItems(items.filter((i) => !money.includes(i)));
+  const date = leadingDate(text);
+  return { page, y, items, money, text, date, dateLen: date?.length ?? 0, header: isHeader(items), summary: false, facts: {} };
+}
+
+/**
+ * Summary boxes: "Opening Balance  Total Debit  Debit Count" with the values on the row below, lined up under
+ * each label, or "Opening balance £10.00" on one row. Rows that form such a box are kept out of the table.
+ */
+function readSummaries(rows: TRow[][]): void {
+  for (const pr of rows) {
+    pr.forEach((r, i) => {
+      const labels = phrases(r.items.filter((it) => !r.money.includes(it)));
+      const summaryish = labels.filter((p) => isSummaryLabel(p.str));
+      if (!summaryish.length) return;
+      const below = pr[i + 1] && r.y - pr[i + 1]!.y <= 30 && !pr[i + 1]!.header ? pr[i + 1]! : null;
+      let aligned = 0;
+      for (const p of labels) {
+        const key = factKey(p.str);
+        if (!key) continue;
+        // Value on the row below, starting under the label.
+        const v = below?.items.find((it) => (Math.abs(it.x - p.x0) <= 8 || (it.x >= p.x0 - 2 && it.x < p.x1)) && !isSummaryLabel(it.str));
+        if (v && assignFact(r.facts, key, v.str)) {
+          aligned++;
+          continue;
+        }
+        // Or on the same row, just to the right.
+        const right = r.items.filter((it) => it.x >= p.x1 - 1).sort((a, b) => a.x - b.x)[0];
+        if (!right || right.x - p.x1 > 220 || isSummaryLabel(right.str) || headRole(right.str)) continue;
+        if ((key === 'holder' || key === 'number') && !/:\s*$/.test(p.str) && right.x - p.x1 > 60) continue;
+        assignFact(r.facts, key, right.str);
+      }
+      if (summaryish.length >= 2 && aligned >= 1) {
+        r.summary = true;
+        below!.summary = true;
+      }
+    });
+  }
+}
+
+function assignFact(f: Facts, key: FactKey, raw: string): boolean {
+  const s = raw.trim();
+  if (key === 'holder') {
+    if (!/[A-Za-z]{2}/.test(s) || /\d{4}/.test(s)) return false;
+    f.holder ??= s;
+    return true;
+  }
+  if (key === 'number') {
+    const m = /\b(\d{8,12})\b/.exec(s.replace(/\s/g, ''));
+    if (!m) return false;
+    f.number ??= m[1];
+    return true;
+  }
+  if (key === 'countIn' || key === 'countOut') {
+    if (!/^\d{1,6}$/.test(s)) return false;
+    f[key] ??= Number(s);
+    return true;
+  }
+  if (!isMoney(s)) return false;
+  const v = moneyValue(s);
+  if (v === null) return false;
+  f[key] ??= v;
+  return true;
 }
 
 export function analysePdf(pages: PdfPage[], opts: { saved?: PdfLayout[]; year?: number } = {}): PdfAnalysis {
-  const rows: TRow[][] = pages.map((page, pi) =>
-    groupRows(page).map((r: Row) => {
-      const items = mergeTouching(r.items);
-      const money = items.filter((i) => isMoney(i.str));
-      const text = joinItems(items.filter((i) => !money.includes(i)));
-      return { page: pi, y: r.y, items, money, text, date: leadingDate(text), header: isHeader(items) };
-    }),
-  );
+  return analysePdfSections(pages, opts)[0]!;
+}
+
+/**
+ * Some statements hold several accounts one after another (a wallet and its savings pot), each with its own
+ * opening balance and table. Each comes back as its own analysis, in the order printed.
+ */
+export function analysePdfSections(pages: PdfPage[], opts: { saved?: PdfLayout[]; year?: number } = {}): PdfAnalysis[] {
+  const rows = buildRows(pages);
+  readSummaries(rows);
+  for (const pr of rows) for (const r of pr) if (r.summary) r.header = false;
 
   // Typical line spacing inside tables.
   const gaps: number[] = [];
@@ -289,10 +479,23 @@ export function analysePdf(pages: PdfPage[], opts: { saved?: PdfLayout[]; year?:
     if (g > 0 && g < 40) gaps.push(g);
   }
   const step = median(gaps, 12);
+  // Some layouts space whole transactions further apart than lines (a block of rows per transaction); the
+  // table continues over those bigger gaps too, as long as they are typical between the first and last row.
+  const inner: number[] = [];
+  for (const pr of rows) {
+    const idx = pr.flatMap((r, i) => (r.date && r.money.length && !r.summary ? [i] : []));
+    if (idx.length < 2) continue;
+    for (let i = idx[0]! + 1; i <= idx[idx.length - 1]!; i++) {
+      const g = pr[i - 1]!.y - pr[i]!.y;
+      if (g > 0 && g < 60) inner.push(g);
+    }
+  }
+  const tol = inner.length >= 10 ? Math.max(step * 1.5, quantile(inner, 0.9, 0) * 1.25) : step * 3;
 
   // Table zones: from each heading (or each first dated row) down over tightly spaced rows.
   const inZone = rows.map((pr) => pr.map(() => false));
   const zoneHeader: Array<Array<TRow | null>> = rows.map((pr) => pr.map(() => null));
+  let lastHeader: TRow | null = null;
   rows.forEach((pr, p) => {
     let i = 0;
     while (i < pr.length) {
@@ -300,15 +503,21 @@ export function analysePdf(pages: PdfPage[], opts: { saved?: PdfLayout[]; year?:
       let start = -1;
       let hdr: TRow | null = null;
       if (r.header) { start = i + 1; hdr = r; }
-      else if (r.date && (r.money.length || (pr[i + 1]?.money.length && r.y - pr[i + 1]!.y <= step * 3))) {
+      else if (!r.summary && r.date && (r.money.length || (pr[i + 1]?.money.length && r.y - pr[i + 1]!.y <= step * 3))) {
         start = i;
         // Rows carried over from the previous page sit above the first date.
-        while (start > 0 && !pr[start - 1]!.header && pr[start - 1]!.y - pr[start]!.y <= step * 1.8 && pr[start - 1]!.money.length) start--;
+        while (start > 0 && !pr[start - 1]!.header && !pr[start - 1]!.summary && pr[start - 1]!.y - pr[start]!.y <= step * 1.8 && pr[start - 1]!.money.length) start--;
+        // A description printed just above its own dated row (centred in a taller cell).
+        while (start > 0 && !pr[start - 1]!.header && !pr[start - 1]!.summary && !pr[start - 1]!.money.length && !pr[start - 1]!.date
+          && pr[start - 1]!.y - pr[start]!.y <= step * 1.2 && pr[start]!.y - (pr[start + 1]?.y ?? -Infinity) <= step * 1.2 && i - start < 2) start--;
         if (start > 0 && pr[start - 1]!.header) hdr = pr[start - 1]!;
+        // A table that runs on from the previous page without repeating its heading keeps the old one.
+        hdr ??= lastHeader;
       }
       if (start < 0) { i++; continue; }
+      if (hdr) lastHeader = hdr;
       let j = start;
-      while (j < pr.length && !pr[j]!.header && (j === start || pr[j - 1]!.y - pr[j]!.y <= step * 3)) {
+      while (j < pr.length && !pr[j]!.header && !pr[j]!.summary && (j === start || pr[j - 1]!.y - pr[j]!.y <= tol)) {
         inZone[p]![j] = true;
         zoneHeader[p]![j] = hdr;
         j++;
@@ -317,11 +526,58 @@ export function analysePdf(pages: PdfPage[], opts: { saved?: PdfLayout[]; year?:
     }
   });
 
-  const zoneRows = rows.flatMap((pr, p) => pr.filter((_, i) => inZone[p]![i]).map((r) => ({ r, hdr: zoneHeader[p]![pr.indexOf(r)] ?? null })));
-  const outsideRows = rows.flatMap((pr, p) => pr.filter((_, i) => !inZone[p]![i]));
-  if (!zoneRows.some(({ r }) => r.date) || !zoneRows.some(({ r }) => r.money.length)) {
+  if (!rows.some((pr, p) => pr.some((r, i) => inZone[p]![i] && r.date)) || !rows.some((pr, p) => pr.some((r, i) => inZone[p]![i] && r.money.length))) {
     throw new ImportError('No transaction table was found in this PDF. If it is a statement, download a CSV, OFX or QIF from online banking instead.');
   }
+
+  // Sections: a new summary box with an opening balance after transactions have been read starts a new account.
+  const flat = rows.flatMap((pr, p) => pr.map((r, i) => ({ r, zone: inZone[p]![i]!, hdr: zoneHeader[p]![i] ?? null })));
+  const sections: Array<typeof flat> = [[]];
+  let seenTxn = false;
+  for (const e of flat) {
+    if (!e.zone && e.r.facts.opening !== undefined && seenTxn) {
+      // The section's title rows ("Savings Account") sit just above its summary box.
+      const cur = sections[sections.length - 1]!;
+      const moved: typeof flat = [];
+      while (cur.length && !cur[cur.length - 1]!.zone && cur[cur.length - 1]!.r.page === e.r.page && cur[cur.length - 1]!.r.y - e.r.y <= 80) moved.unshift(cur.pop()!);
+      sections.push(moved);
+      seenTxn = false;
+    }
+    sections[sections.length - 1]!.push(e);
+    if (e.zone && e.r.money.length) seenTxn = true;
+  }
+
+  const currency = currencyOf(pages);
+  const everyFlat = flat.map((e) => e.r.text.toLowerCase().replace(/\s+/g, ''));
+  const firstPages = flat.filter((e) => !e.zone && e.r.page < 2).map((e) => e.r.text.toLowerCase().replace(/\s+/g, ''));
+  const otherOutside = flat.filter((e) => !e.zone && e.r.page >= 2).map((e) => e.r.text.toLowerCase().replace(/\s+/g, ''));
+  const bank = bankFrom([...firstPages, ...otherOutside], everyFlat);
+  const years: number[] = [];
+  for (const e of flat) for (const m of e.r.text.matchAll(/\b(20\d{2})\b/g)) years.push(Number(m[1]));
+  const docFacts: Facts = {};
+  for (const e of flat) for (const k of ['holder', 'number'] as const) if (e.r.facts[k] && !docFacts[k]) docFacts[k] = e.r.facts[k] as never;
+
+  const out = sections
+    .filter((s) => s.some((e) => e.zone && e.r.date) && s.some((e) => e.zone && e.r.money.length))
+    .map((s, si, all) => analyseSection(s, { bank, currency, step, years, docFacts, multi: all.length > 1, index: si, opts }));
+  if (!out.length) throw new ImportError('No transaction table was found in this PDF. If it is a statement, download a CSV, OFX or QIF from online banking instead.');
+  return out;
+}
+
+interface SectionCtx {
+  bank: string;
+  currency?: Currency;
+  step: number;
+  years: number[];
+  docFacts: Facts;
+  multi: boolean;
+  index: number;
+  opts: { saved?: PdfLayout[]; year?: number };
+}
+
+function analyseSection(entries: Array<{ r: TRow; zone: boolean; hdr: TRow | null }>, ctx: SectionCtx): PdfAnalysis {
+  const zoneRows = entries.filter((e) => e.zone);
+  const outsideRows = entries.filter((e) => !e.zone).map((e) => e.r);
 
   // Money columns: whichever alignment gives the fewest clean columns.
   const tokens = zoneRows.flatMap(({ r }) => (markerOf(r.text) ? [] : r.money));
@@ -351,45 +607,75 @@ export function analysePdf(pages: PdfPage[], opts: { saved?: PdfLayout[]; year?:
     }
   }
 
-  const lines: Line[] = zoneRows.map(({ r }) => {
+  const spansOf = new Map<TRow | null, TextSpans>();
+  let lines: Line[] = zoneRows.map(({ r, hdr }) => {
+    if (!spansOf.has(hdr)) spansOf.set(hdr, textSpans(hdr));
+    const spans = spansOf.get(hdr)!;
     const dateText = r.date ?? '';
-    let text = r.date ? r.text.slice(r.date.length).trim() : r.text;
-    const second = leadingDate(text); // a value date printed next to the posting date
-    if (second && r.date) text = text.slice(second.length).trim();
-    return {
-      page: r.page, dateText, text,
+    let rest = r.date ? r.text.slice(r.dateLen).trim() : r.text;
+    const tm = r.date ? leadingTime(rest) : null;
+    if (tm) rest = rest.slice(tm.len).trim();
+    let text: string;
+    let ref: string | undefined;
+    if (spans.desc) {
+      // The heading says where descriptions are: anything else on the row (channel, value date, reference) is not one.
+      const words = r.items.filter((it) => !r.money.includes(it));
+      const inside = (it: PdfItem, s?: [number, number]) => !!s && it.x >= s[0] && it.x < s[1];
+      text = joinItems(words.filter((it) => inside(it, spans.desc) && !(r.date && it.x < (words[0]?.x ?? 0) + 1 && leadingDate(it.str))));
+      const refText = joinItems(words.filter((it) => inside(it, spans.ref)));
+      const loose = words.filter((it) => !inside(it, spans.desc) && !inside(it, spans.ref)).map((it) => it.str.trim()).find((s) => /^(?=.*\d)[A-Z0-9/-]{6,}$/i.test(s) && !leadingDate(s));
+      ref = refText || loose || undefined;
+    } else {
+      const second = r.date ? leadingDate(rest) : null; // a value date printed next to the posting date
+      text = second ? rest.slice(second.length).trim() : rest;
+    }
+    text = text.replace(/^[\s,.:;–-]+(?=\S)/, '').trim();
+    const line: Line = {
+      page: r.page, y: r.y, dateText, texts: text ? [text] : [],
       money: r.money.map((t) => ({ col: colOf(t), value: moneyValue(t.str) })).filter((m): m is { col: number; value: Pence } => m.col >= 0 && m.value !== null),
       marker: markerOf(r.text),
     };
+    if (tm) line.time = tm.time;
+    if (ref) line.ref = ref;
+    return line;
   });
 
-  // Facts printed outside the table: bank, account, opening/closing, years.
-  const outside: PdfAnalysis['outside'] = { years: [] };
-  let bank = '';
+  const blocks = findBlocks(lines);
+  if (blocks) lines = blocks;
+
+  // Facts printed outside the table: summary boxes, account, opening/closing.
+  const facts: Facts = {};
+  for (const r of entries.map((e) => e.r)) for (const [k, v] of Object.entries(r.facts) as Array<[FactKey, never]>) if (facts[k] === undefined) facts[k] = v;
+  const outside: PdfAnalysis['outside'] = { years: ctx.years, ...facts };
   let sortCode: string | undefined;
-  let number: string | undefined;
+  let number = facts.number;
   outsideRows.forEach((r, i) => {
-    const flat = r.text.toLowerCase().replace(/\s+/g, '');
-    if (!bank && r.page < 2) bank = BANKS.find(([k]) => flat.includes(k))?.[1] ?? '';
     if (!sortCode) sortCode = /\b(\d{2}-\d{2}-\d{2})\b/.exec(r.text)?.[1];
-    if (!number && /account/i.test(r.text)) number = /\b(\d{8})\b/.exec(r.text)?.[1] ?? /\b(\d{8})\b/.exec(outsideRows[i + 1]?.text ?? '')?.[1];
+    if (!number && /account/i.test(r.text)) number = /\b(\d{10}|\d{8})\b/.exec(r.text)?.[1] ?? /\b(\d{10}|\d{8})\b/.exec(outsideRows[i + 1]?.text ?? '')?.[1];
+    if (r.summary) return;
     const mk = markerOf(r.text);
     const v = r.money.length ? moneyValue(r.money[r.money.length - 1]!.str) : null;
     if (v !== null && mk === 'bf' && outside.opening === undefined) outside.opening = v;
     if (v !== null && mk === 'cf' && outside.closing === undefined) outside.closing = v;
   });
-  for (const pr of rows) for (const r of pr) for (const m of r.text.matchAll(/\b(20\d{2})\b/g)) outside.years.push(Number(m[1]));
+  number ??= ctx.docFacts.number;
+  // In a statement holding several accounts, the section's title names it ("Wallet Account", "Savings Account").
+  const title = ctx.multi
+    ? outsideRows.map((r) => phrases(r.items)[0]?.str ?? '').find((s) => /\b(?:account|wallet|savings?|current|pot)\b/i.test(s) && !/statement/i.test(s) && !isSummaryLabel(s) && s.length <= 40)
+    : undefined;
 
   const dateOrder = detectDateOrder(lines.filter((l) => l.dateText).map((l) => l.dateText));
   const dated = lines.filter((l) => l.dateText && !l.marker);
-  const style = dated.length && dated.filter((l) => l.money.length).length / dated.length >= 0.6 ? 'first' : 'last';
+  const style = blocks || (dated.length && dated.filter((l) => l.money.length).length / dated.length >= 0.6) ? 'first' : 'last';
 
   const base: Omit<PdfAnalysis, 'roles' | 'fromSaved' | 'result'> = {
-    bank, account: { sortCode, number }, anchor, columns, dateOrder, style, lines, outside, fallbackYear: opts.year ?? new Date().getFullYear(),
+    bank: ctx.bank,
+    account: { sortCode, number, holder: facts.holder ?? ctx.docFacts.holder, label: title ?? (ctx.multi ? `Account ${ctx.index + 1}` : undefined) },
+    currency: ctx.currency, anchor, columns, dateOrder, style, blocks: !!blocks, multi: ctx.multi, lines, outside, fallbackYear: ctx.opts.year ?? new Date().getFullYear(),
   };
 
   // Choose roles: saved layout, headings, and every valid assignment, scored by the balance.
-  const saved = (opts.saved ?? []).find((l) => matchesLayout(l, base));
+  const saved = (ctx.opts.saved ?? []).find((l) => matchesLayout(l, base));
   const headerGuess = columns.map((c) => c.hint ?? 'ignore');
   const candidates: MoneyRole[][] = [];
   if (saved) candidates.push(columns.map((c) => saved.columns.find((s) => Math.abs(s.edge - c.edge) <= 6)?.role ?? 'ignore'));
@@ -427,6 +713,57 @@ export function analysePdf(pages: PdfPage[], opts: { saved?: PdfLayout[]; year?:
   return { ...base, dateOrder: order, roles, fromSaved: !!saved && roles === candidates[0], result };
 }
 
+/**
+ * Some statements give each transaction a block of rows: the description wraps above and below the line that
+ * carries the date and amounts, and blocks are spaced further apart than the rows inside them. When the gaps
+ * split cleanly into "inside a block" and "between blocks", and no block holds two amounts, each block becomes
+ * one line. Otherwise the statement is read row by row as before.
+ */
+function findBlocks(lines: Line[]): Line[] | null {
+  const gaps: number[] = [];
+  for (let i = 1; i < lines.length; i++) if (lines[i]!.page === lines[i - 1]!.page) gaps.push(Math.round((lines[i - 1]!.y - lines[i]!.y) * 2) / 2);
+  // Only gap sizes that recur count: a handful of odd gaps (a wrapped reference) must not hide the jump.
+  const freq = new Map<number, number>();
+  for (const g of gaps) if (g > 0) freq.set(g, (freq.get(g) ?? 0) + 1);
+  const uniq = [...freq.entries()].filter(([, n]) => n >= Math.max(1, Math.ceil(gaps.length * 0.03))).map(([g]) => g).sort((a, b) => a - b);
+  for (let k = 1; k < uniq.length; k++) {
+    if (uniq[k]! / uniq[k - 1]! < 1.8) continue;
+    const cut = (uniq[k]! + uniq[k - 1]!) / 2;
+    const groups: Line[][] = [];
+    lines.forEach((l, i) => {
+      const prev = lines[i - 1];
+      if (!prev || prev.page !== l.page || prev.y - l.y > cut) groups.push([l]);
+      else groups[groups.length - 1]!.push(l);
+    });
+    // A block cut by a page break: text left at the foot of one page belongs to the first block of the next.
+    for (let g = 0; g < groups.length - 1; g++) {
+      const a = groups[g]!;
+      const b = groups[g + 1]!;
+      if (!a.some((l) => l.money.length) && b[0]!.page === a[0]!.page + 1 && b.some((l) => l.money.length)) { groups[g + 1] = [...a, ...b]; groups[g] = []; }
+    }
+    const withMoney = groups.filter((g) => g.some((l) => l.money.length));
+    if (groups.some((g) => g.filter((l) => l.money.length).length > 1)) return null;
+    // Too few multi-row blocks at this cut: the gap was noise between rows; try the next jump.
+    if (!withMoney.length || withMoney.filter((g) => g.length > 1).length < withMoney.length * 0.3) continue;
+    return withMoney.map((g) => {
+      const main = g.find((l) => l.money.length)!;
+      const merged: Line = {
+        page: main.page, y: main.y,
+        dateText: g.find((l) => l.dateText)?.dateText ?? '',
+        texts: g.flatMap((l) => l.texts),
+        money: main.money,
+        marker: g.map((l) => l.marker).find(Boolean) ?? null,
+      };
+      const time = g.find((l) => l.time)?.time;
+      if (time) merged.time = time;
+      const ref = g.flatMap((l) => (l.ref ? [l.ref] : [])).join('');
+      if (ref) merged.ref = ref;
+      return merged;
+    });
+  }
+  return null;
+}
+
 function validRoles(r: MoneyRole[]): boolean {
   const n = (x: MoneyRole) => r.filter((v) => v === x).length;
   if (n('out') > 1 || n('in') > 1 || n('amount') > 1 || n('balance') > 1 || n('fee') > 1) return false;
@@ -447,6 +784,8 @@ function score(a: Omit<PdfAnalysis, 'roles' | 'fromSaved' | 'result'>, roles: Mo
   let sc = s.confirmed * 2 - s.wrong * 4 - s.flipped;
   if (s.closingOk === true) sc += 3;
   if (s.closingOk === false) sc -= 3;
+  if (s.totalsOk === true) sc += 2;
+  if (s.totalsOk === false) sc -= 2;
   roles.forEach((role, i) => {
     if (hints[i] !== 'ignore') sc += role === hints[i] ? 1 : -1;
     if (role === 'ignore') sc -= 0.25;
@@ -463,13 +802,57 @@ export function readPdfWith(a: PdfAnalysis, roles: MoneyRole[], dateOrder: DateO
   return { parsed: r.parsed, verified: r.verified, reason: r.reason };
 }
 
-interface Stats { confirmed: number; wrong: number; flipped: number; closingOk: boolean | null; hasBalance: boolean }
+interface Stats { confirmed: number; wrong: number; flipped: number; closingOk: boolean | null; hasBalance: boolean; totalsOk: boolean | null; reordered: number; openingFixed: boolean }
+
+/** Walk the running balance from `start`. Same-day neighbours the balance shows the other way round are swapped. */
+function reconcile(txns: RawTxn[], start: Pence | undefined, inferred: boolean, unsigned: boolean, apply: boolean) {
+  const stats = { confirmed: 0, wrong: 0, flipped: 0, reordered: 0, end: start };
+  if (start === undefined) return stats;
+  // When only counting, work on a copy so trying one starting point never disturbs the next.
+  const list = apply ? txns : [...txns];
+  let run = start;
+  let since = 0;
+  for (let i = 0; i < list.length; i++) {
+    let t = list[i]!;
+    if (inferred && i === 0) { run = t.balance!; continue; }
+    // Rows from the same moment can be printed in the wrong order (a top-up shown after the payment it paid for,
+    // a fee before its transfer). When this row's balance doesn't follow but one of the next few same-day rows'
+    // does, that row comes first. Only an exact balance match moves anything.
+    if (!unsigned && t.balance !== undefined && since === 0 && run + t.amount !== t.balance) {
+      for (let k = i + 1; k < Math.min(list.length, i + 5) && list[k]!.date === t.date; k++) {
+        const n = list[k]!;
+        if (n.balance === undefined || run + n.amount !== n.balance) continue;
+        list.splice(k, 1);
+        list.splice(i, 0, n);
+        t = n;
+        stats.reordered++;
+        break;
+      }
+    }
+    let amt = t.amount;
+    if (unsigned && t.balance !== undefined && since === 0 && Math.abs(t.balance - run) === Math.abs(t.amount) && t.balance - run !== t.amount) {
+      amt = t.balance - run; // the column has no signs; the balance says which way it went
+      if (apply) t.amount = amt;
+    } else if (!unsigned && t.balance !== undefined && since === 0 && t.balance - run === -t.amount && t.amount !== 0) {
+      stats.flipped++;
+    }
+    run += amt;
+    since++;
+    if (t.balance !== undefined) {
+      if (t.balance === run) stats.confirmed++;
+      else { stats.wrong++; run = t.balance; }
+      since = 0;
+    }
+  }
+  stats.end = run;
+  return stats;
+}
 
 function readWith(a: Omit<PdfAnalysis, 'roles' | 'fromSaved' | 'result'>, roles: MoneyRole[], order: DateOrder, light = false): PdfReading & { stats: Stats } {
   const role = (col: number): MoneyRole => roles[col] ?? 'ignore';
   const unsigned = roles.includes('amount') && !a.lines.some((l) => l.money.some((m) => role(m.col) === 'amount' && m.value < 0));
 
-  interface Draft { parts: DateParts | null; lines: string[]; amount: Pence; balance?: Pence; type: string }
+  interface Draft { parts: DateParts | null; lines: string[]; amount: Pence; balance?: Pence; type: string; time?: string; ref?: string }
   const drafts: Draft[] = [];
   let curDate: DateParts | null = null;
   let pending: string[] = [];
@@ -500,7 +883,9 @@ function readWith(a: Omit<PdfAnalysis, 'roles' | 'fromSaved' | 'result'>, roles:
     }
     if (amt === null) fee = 0; // a fee always sits beside the payment it belongs to
     if (amt !== null) {
-      const d: Draft = { parts: curDate, lines: light ? [] : [...pending, ...(l.text ? [l.text] : [])], amount: amt ?? 0, type: '' };
+      const d: Draft = { parts: curDate, lines: light ? [] : [...pending, ...l.texts], amount: amt ?? 0, type: '' };
+      if (l.time) d.time = l.time;
+      if (l.ref) d.ref = l.ref;
       drafts.push(d);
       last = d;
       // A fee is its own transaction, after the payment it belongs to; the printed balance comes after both.
@@ -513,9 +898,9 @@ function readWith(a: Omit<PdfAnalysis, 'roles' | 'fromSaved' | 'result'>, roles:
     } else if (bal !== undefined) {
       if (last && last.balance === undefined) last.balance = bal;
       else if (!drafts.length && opening === undefined) opening = bal;
-    } else if (l.text && !light) {
-      if (a.style === 'first' && last && !l.dateText) last.lines.push(l.text);
-      else pending.push(l.text);
+    } else if (l.texts.length && !light) {
+      if (a.style === 'first' && last && !l.dateText) last.lines.push(...l.texts);
+      else pending.push(...l.texts);
     }
   }
 
@@ -550,42 +935,59 @@ function readWith(a: Omit<PdfAnalysis, 'roles' | 'fromSaved' | 'result'>, roles:
     prevM = d.parts.m;
     const t: RawTxn = { date: makeDate(year, d.parts.m, d.parts.d), amount: d.amount, type: d.type, lines: d.lines.length || light ? d.lines : ['(no description)'] };
     if (d.balance !== undefined) t.balance = d.balance;
+    if (d.time) t.time = d.time;
+    if (d.ref) t.ref = d.ref;
     if (t.amount !== 0) txns.push(t);
   }
   if (descending) txns.reverse();
 
   // Reconcile against the printed balance.
-  const stats: Stats = { confirmed: 0, wrong: 0, flipped: 0, closingOk: null, hasBalance: roles.includes('balance') };
+  const hasBalance = roles.includes('balance');
   if (opening === undefined) opening = a.outside.opening;
   if (closing === undefined) closing = a.outside.closing;
-  let start = opening;
+  const first = txns[0];
+  const canInfer = first?.balance !== undefined;
+  const inferredStart = canInfer ? first.balance! - first.amount : undefined;
   // With no printed opening balance, the first row's balance sets the start; that row then proves nothing.
-  const inferred = start === undefined && txns[0]?.balance !== undefined;
-  if (inferred) start = txns[0]!.balance! - txns[0]!.amount;
-  if (start !== undefined) {
-    let run = start;
-    let since = 0;
-    for (const [i, t] of txns.entries()) {
-      if (inferred && i === 0) { run = t.balance!; continue; }
-      if (unsigned && t.balance !== undefined && since === 0 && Math.abs(t.balance - run) === Math.abs(t.amount) && t.balance - run !== t.amount) {
-        t.amount = t.balance - run; // the column has no signs; the balance says which way it went
-      } else if (!unsigned && t.balance !== undefined && since === 0 && t.balance - run === -t.amount && t.amount !== 0) {
-        stats.flipped++;
-      }
-      run += t.amount;
-      since++;
-      if (t.balance !== undefined) {
-        if (t.balance === run) stats.confirmed++;
-        else { stats.wrong++; run = t.balance; }
-        since = 0;
-      }
+  let start = opening ?? inferredStart;
+  let inferred = opening === undefined && canInfer;
+  let openingFixed = false;
+  let rec = reconcile(txns, start, inferred, unsigned, false);
+  // A printed opening balance can itself be wrong (one bank prints the balance after the first row). If starting
+  // from the first row instead makes every later balance and the closing balance agree, trust the rows.
+  if (opening !== undefined && canInfer && rec.wrong > 0) {
+    const alt = reconcile(txns, inferredStart, true, unsigned, false);
+    const closes = closing === undefined || alt.end === closing;
+    if (alt.wrong === 0 && alt.confirmed > 0 && closes) {
+      start = inferredStart;
+      inferred = true;
+      openingFixed = true;
+      rec = alt;
     }
-    if (closing !== undefined && stats.hasBalance) stats.closingOk = run === closing;
   }
+  rec = reconcile(txns, start, inferred, unsigned, true);
+  const stats: Stats = {
+    confirmed: rec.confirmed, wrong: rec.wrong, flipped: rec.flipped, reordered: rec.reordered, hasBalance, openingFixed,
+    closingOk: start !== undefined && closing !== undefined && hasBalance ? rec.end === closing : null,
+    totalsOk: null,
+  };
+
+  // Printed totals and counts: a second, independent proof.
+  const sumIn = txns.reduce((s, t) => s + (t.amount > 0 ? t.amount : 0), 0);
+  const sumOut = txns.reduce((s, t) => s + (t.amount < 0 ? -t.amount : 0), 0);
+  const nIn = txns.filter((t) => t.amount > 0).length;
+  const nOut = txns.filter((t) => t.amount < 0).length;
+  const o = a.outside;
+  const totalChecks: boolean[] = [];
+  if (o.totalIn !== undefined) totalChecks.push(Math.abs(o.totalIn) === sumIn);
+  if (o.totalOut !== undefined) totalChecks.push(Math.abs(o.totalOut) === sumOut);
+  if (o.countIn !== undefined) totalChecks.push(o.countIn === nIn);
+  if (o.countOut !== undefined) totalChecks.push(o.countOut === nOut);
+  if (totalChecks.length) stats.totalsOk = totalChecks.every(Boolean);
 
   const checks: Check[] = [];
   let reason: string | undefined;
-  if (!stats.hasBalance) {
+  if (!hasBalance) {
     reason = 'This statement has no balance column that Tally could find, so the reading cannot be proved.';
     checks.push({ name: 'No balance to check against', ok: false, detail: 'Compare the preview with your statement before importing.' });
   } else {
@@ -608,17 +1010,50 @@ function readWith(a: Omit<PdfAnalysis, 'roles' | 'fromSaved' | 'result'>, roles:
     else if (!stats.confirmed) reason = 'No printed balance could be matched.';
     else if (stats.closingOk === false) reason = 'The closing balance does not match.';
   }
+  if (stats.totalsOk !== null) {
+    const parts = [
+      o.totalIn !== undefined ? `money in ${fmt(sumIn)}` : '', o.totalOut !== undefined ? `money out ${fmt(sumOut)}` : '',
+      o.countIn !== undefined ? `${nIn} in` : '', o.countOut !== undefined ? `${nOut} out` : '',
+    ].filter(Boolean).join(', ');
+    checks.push({
+      name: stats.totalsOk ? 'Printed totals agree' : 'Printed totals do not agree',
+      ok: stats.totalsOk,
+      detail: stats.totalsOk ? `Read ${parts}.` : `Read ${parts}; the statement prints ${[
+        o.totalIn !== undefined ? `in ${fmt(Math.abs(o.totalIn))}` : '', o.totalOut !== undefined ? `out ${fmt(Math.abs(o.totalOut))}` : '',
+        o.countIn !== undefined ? `${o.countIn} in` : '', o.countOut !== undefined ? `${o.countOut} out` : '',
+      ].filter(Boolean).join(', ')}.`,
+    });
+    if (!stats.totalsOk && !reason) reason = 'The totals printed on the statement do not match the transactions read.';
+  }
+  if (openingFixed && !light) {
+    warnings.push(`The statement prints an opening balance of ${fmt(opening!)}, but its first transaction only adds up from ${fmt(start!)}. Every later balance agrees with ${fmt(start!)}, so that was used.`);
+  }
+  if (stats.reordered && !light) {
+    warnings.push(`${stats.reordered} same-day transaction${stats.reordered === 1 ? ' was' : 's were'} printed out of order; the running balance put them back.`);
+  }
   if (skipped) warnings.push(`${skipped} row(s) had no date and were skipped.`);
+
+  const statementCurrency = a.currency;
+  if (statementCurrency && statementCurrency !== region().currency && !light) {
+    reason = `This statement is in ${CURRENCY_NAME[statementCurrency]}, but Tally is set to ${region().name} (${region().symbol}). Change “Where you bank” in Settings before importing it.`;
+    checks.push({ name: 'Currency does not match', ok: false, detail: `Statement in ${CURRENCY_NAME[statementCurrency]}; Tally set to ${region().unitName}.` });
+  }
 
   const dates = txns.map((t) => t.date).sort();
   const parsed: ParsedStatement = {
     bank: a.bank || 'PDF statement',
     format: 'pdf-generic',
-    account: { sortCode: a.account.sortCode, number: a.account.number, label: a.account.number ? undefined : a.bank || undefined },
+    account: {
+      sortCode: a.account.sortCode, number: a.account.number, holder: a.account.holder,
+      label: a.account.label ?? (a.account.number ? undefined : a.bank || undefined),
+      ...(a.multi ? { section: a.account.label } : {}),
+    },
     periodStart: dates[0],
     periodEnd: dates[dates.length - 1],
-    opening,
+    opening: openingFixed ? start : opening,
     closing,
+    totalIn: o.totalIn,
+    totalOut: o.totalOut,
     txns,
     checks,
     warnings,
@@ -627,6 +1062,8 @@ function readWith(a: Omit<PdfAnalysis, 'roles' | 'fromSaved' | 'result'>, roles:
   if (!reason && !verified) reason = skipped ? 'Some rows had no date.' : 'Too few printed balances to be sure.';
   return { parsed, verified, reason: verified ? undefined : reason, stats };
 }
+
+const CURRENCY_NAME: Record<Currency, string> = { GBP: 'pounds (£)', NGN: 'naira (₦)', USD: 'dollars ($)', EUR: 'euros (€)' };
 
 // ---- remembered layouts ----------------------------------------------------------------------
 

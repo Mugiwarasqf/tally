@@ -55,7 +55,7 @@ export function Heatmap({ values, from, to, label }: { values: Map<ISODate, Penc
                       className={`hm-cell${hover === d ? ' is-hover' : ''}`} fill={fill ?? 'var(--surface-2)'}
                       tabIndex={0}
                       aria-label={`${fmtWeekday(d)} ${fmtDay(d)}: ${v > 0 ? fmt(v) : 'no spending'}`}
-                      onPointerEnter={() => { setHover(d); setTip({ x: x + cell / 2, y: y + cell / 2, title: `${fmtWeekday(d)} ${fmtDay(d)}`, rows: [{ name: v > 0 ? 'spent' : 'no spending', value: v > 0 ? fmt(v) : '£0' }] }); }}
+                      onPointerEnter={() => { setHover(d); setTip({ x: x + cell / 2, y: y + cell / 2, title: `${fmtWeekday(d)} ${fmtDay(d)}`, rows: [{ name: v > 0 ? 'spent' : 'no spending', value: v > 0 ? fmt(v) : fmt(0) }] }); }}
                       onPointerLeave={() => { setHover(null); hide(); }}
                       onFocus={() => { setHover(d); setTip({ x: x + cell / 2, y: y + cell / 2, title: `${fmtWeekday(d)} ${fmtDay(d)}`, rows: [{ name: 'spent', value: fmt(v) }] }); }}
                       onBlur={() => { setHover(null); hide(); }}

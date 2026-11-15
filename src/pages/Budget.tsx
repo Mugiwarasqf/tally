@@ -15,6 +15,7 @@ import { PeriodPill } from '../ui/components/Period';
 import { BudgetSavings } from './BudgetSavings';
 import { useConfirm, useToast } from '../ui/components/overlay';
 import { Icon } from '../ui/icons';
+import { everyday } from '../lib/region';
 
 /** Plan a cycle (income, savings, debt, every category) and, for the current one, see how you're tracking. */
 export function Budget() {
@@ -138,7 +139,7 @@ export function Budget() {
             {adding ? (
               <div className="menu" role="listbox" aria-label="Add a category to the budget">
                 {addable.map((c) => (
-                  <button key={c.id} className="menu__item" onClick={async () => { await setBudget(viewKey, c.id, suggestion.get(c.id) ?? 5000); setAdding(false); }}>
+                  <button key={c.id} className="menu__item" onClick={async () => { await setBudget(viewKey, c.id, suggestion.get(c.id) ?? everyday(50)); setAdding(false); }}>
                     <CatTile cat={c} size="sm" />{c.name}
                   </button>
                 ))}

@@ -45,6 +45,8 @@ export function matchesHolder(payee: string, holders: string[]): boolean {
     if (p[0]!.length === 1 && p[0] === first[0] && p[1] && pre(p[1], last, 4)) return true;
     // Initials + surname: "J Q Example" (each initial matches a holder name in order)
     if (p.length >= 3 && p.slice(0, -1).every((w, i) => w.length === 1 && w === h[i]?.[0]) && pre(p.at(-1)!, last, 4)) return true;
+    // First name and surname with a middle name between: "Jordan Alex Quinn"
+    if (p.length >= 3 && pre(p[0]!, first, 4) && pre(p.at(-1)!, last, 4)) return true;
     // First name + any other holder word, allowing bank truncation: "Jordan Quinn", "Jordan Exampl"
     if (p[1] && pre(p[0]!, first, 4) && h.slice(1).some((w) => pre(p[1]!, w, 4))) return true;
   }
@@ -94,6 +96,10 @@ export function categorize(input: CatInput, ctx: CatContext): CatResult {
 
   if (type === 'POT') return { categoryId: TRANSFER, source: 'own', confidence: 0.97, reason: 'Moving money between the account and its own savings pot' };
   if (type === 'FEE') return { categoryId: 'fees', source: 'heuristic', confidence: 0.95, reason: 'Fee charged by the bank' };
+  if (type === 'TAX') return { categoryId: 'fees', source: 'heuristic', confidence: 0.95, reason: 'Tax the bank withheld from your interest' };
+  if (type === 'INT' && !out) return { categoryId: 'interest', source: 'heuristic', confidence: 0.95, reason: 'Interest paid to you' };
+  // Paying a POS terminal or agent by transfer: cash out, or a shop? Never assumed; the answer is learned.
+  if (type === 'POS' && out) return { categoryId: 'cash', source: 'heuristic', confidence: 0.5, reason: 'Paid to a POS agent or terminal — was it cash, or a shop? Tell Tally once' };
   if (type === 'ATM') return { categoryId: 'cash', source: 'heuristic', confidence: 0.97, reason: 'Cash machine withdrawal' };
   if (d.mkey === 'cash deposit') return { categoryId: 'other-income', source: 'heuristic', confidence: 0.6, reason: 'Cash paid in — check where it came from' };
   if (d.mkey === 'non sterling fee') return { categoryId: 'fees', source: 'heuristic', confidence: 0.98, reason: 'Foreign-currency card fee' };

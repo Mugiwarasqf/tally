@@ -6,6 +6,7 @@ import { DEBT, ONE_OFF } from '../categorize/categories';
 import type { BudgetLine, Category, MonthPlan, Txn } from '../types';
 import { dateRange, kindOf, totals } from './aggregate';
 import type { CatMap } from './aggregate';
+import { everyday } from '../../lib/region';
 
 export type Status = 'under' | 'ontrack' | 'watch' | 'over';
 
@@ -135,7 +136,7 @@ export function suggestBudgets(typical: Map<string, Pence>, cats: Category[]): M
   for (const c of cats) {
     if (c.kind !== 'expense') continue;
     const v = typical.get(c.id) ?? 0;
-    if (v >= 500) out.set(c.id, roundTo5(v + 249));
+    if (v >= everyday(5)) out.set(c.id, roundTo5(v + everyday(2.49)));
   }
   return out;
 }

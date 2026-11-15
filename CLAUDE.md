@@ -1,6 +1,6 @@
 # Tally
 
-Local-first expense tracker, budget planner and debt planner (PWA). Vite + React 19 + TypeScript 7 + Dexie (IndexedDB). UK, GBP; dedicated PDF readers for HSBC UK and Revolut, and a generic, balance-verified reader for any other bank (`docs/06-pdf-statements.md`). See [README.md](README.md) for features.
+Local-first expense tracker, budget planner and debt planner (PWA). Vite + React 19 + TypeScript 7 + Dexie (IndexedDB). One region per device: UK £, Nigeria ₦ or US $ (`src/lib/region.ts`, `docs/07-regions.md`); dedicated PDF readers for HSBC UK and Revolut, and a generic, balance-verified reader for any other bank (`docs/06-pdf-statements.md`). See [README.md](README.md) for features.
 
 ## Hard constraints (from the user)
 
@@ -16,7 +16,7 @@ Local-first expense tracker, budget planner and debt planner (PWA). Vite + React
 - `src/domain/**` is pure: no React, no Dexie, no `window`. Everything is a function of its inputs, which is why it is unit-tested.
 - `src/data/**` owns storage. `src/app/data.tsx` loads everything once and derives shared state (recurring, income, schedules, debt plan, alerts) so every page agrees.
 - Pages read from `useApp()`; they do not query the database directly except for writes.
-- Money is **integer pence**. Dates are `YYYY-MM-DD` strings. Never use floats for money.
+- Money is **integer minor units** (pence/kobo/cents; the type is still called `Pence`). Never hard-code `£`: use `fmt`/`sym()`, and `everyday(n)` for amount thresholds so they scale with the currency. Dates are `YYYY-MM-DD` strings. Never use floats for money.
 - Budget "months" are *cycles* (`monthStartDay`), not calendar months.
 
 ## Design system
@@ -32,6 +32,7 @@ Local-first expense tracker, budget planner and debt planner (PWA). Vite + React
 ```bash
 npm run dev | build | preview | test | typecheck | icons
 TALLY_SAMPLES=<dir> npx vitest run tests/domain/import/hsbc.real.test.ts   # real-statement parser check
+TALLY_NG_SAMPLES=<dir> npx vitest run tests/domain/import/ng.real.test.ts  # Nigerian PDFs, region ng
 ```
 
 Open `/?demo` for fictional sample data (separate database).
@@ -43,5 +44,5 @@ Open `/?demo` for fictional sample data (separate database).
 - ATM rows mention shops ("CASH TESCO"), so type rules run before the merchant dictionary.
 - Overlapping alert syncs race on insert; `syncAlerts` checks-then-adds inside one transaction.
 - In Git Bash, an argument of `/` is rewritten to a Windows path; use `MSYS_NO_PATHCONV=1` when scripting.
-- Editing files with inline `node -e` through the shell mangles `${}`; use a quoted heredoc (`<<'EOF'`) or the edit tool.
+- Editing files with inline `node -e` through the shell mangles `${}`. Git Bash heredocs here also collapse a doubled backslash to one, so a regex word boundary can land in a file as a backspace byte: write regex-heavy code with the edit/write tools, never through a heredoc or an inline script.
 - Never write `useEffect(() => someCall(), deps)` as a one-liner: `window.scrollTo` (and other DOM calls) can return a Promise in Chromium, React takes the return value as the cleanup, and the next run throws "destroy is not a function". Always use a block body. `PageBoundary` keeps a page error from blanking the shell.

@@ -6,8 +6,8 @@ A local-first expense tracker, budget planner and debt planner. Your bank statem
 
 | | |
 |---|---|
-| **Import** | Drop in statements: PDFs from any bank (dedicated readers for HSBC UK and Revolut, a generic reader for the rest), plus CSV, OFX or QIF. Duplicates are detected, and each PDF statement is checked against its own printed totals and running balance ("reconciled"). If a PDF's columns can't be proved, you confirm them once and Tally remembers that bank's layout. |
-| **Categorise** | Merchants are recognised automatically (UK dictionary), transfers between your accounts are netted out, and pay and rent are found by *pattern*. Correct one transaction and Tally learns it. |
+| **Import** | Drop in statements: PDFs from any bank (dedicated readers for HSBC UK and Revolut, a generic reader for the rest), plus CSV, OFX or QIF. Works in the UK (£), Nigeria (₦) and the US ($): pick where you bank on the first screen. Nigerian wallet and bank PDFs (wallet + savings in one file, charges, NIP transfers) are read and proved by their balances. Duplicates are detected, and each PDF statement is checked against its own printed totals and running balance ("reconciled"). If a PDF's columns can't be proved, you confirm them once and Tally remembers that bank's layout. |
+| **Categorise** | Merchants are recognised automatically (UK dictionary plus Nigerian and US packs; Nigerian bank charges, NIP transfers and reversals are read from their wording), transfers between your accounts are netted out, and pay and rent are found by *pattern*. Correct one transaction and Tally learns it. |
 | **Income first** | Weekly, fortnightly or monthly pay is detected by its rhythm. Everything you spend is shown as drawn from it, including a flow diagram and a "3-pay month" count. |
 | **Budget to save** | Start from a savings goal. Tally works out what has to be cut, ranks the cuts that hurt least, and turns the ones you keep into a budget. |
 | **Debt plan** | Cards, loans, buy-now-pay-later and money owed to people. Avalanche or snowball, a payment sized to what you can afford, or a pay-off date. Feeds the budget. |

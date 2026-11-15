@@ -6,6 +6,7 @@ import { bucketOf } from '../categorize/categories';
 import type { Category, Txn } from '../types';
 import { perMonth } from './recurring';
 import type { Recurring } from './recurring';
+import { everyday } from '../../lib/region';
 
 /**
  * A budget built to save money.
@@ -86,7 +87,7 @@ const TIPS: Record<string, string> = {
 };
 
 const EFFORT_ORDER: Record<Effort, number> = { easy: 0, medium: 1, hard: 2 };
-const ceil5 = (p: Pence): Pence => Math.ceil(p / 500) * 500;
+const ceil5 = (p: Pence): Pence => Math.ceil(p / everyday(5)) * everyday(5);
 
 export function buildSavingsPlan(args: {
   /** Average monthly spend per category over recent complete months. */
@@ -114,7 +115,7 @@ export function buildSavingsPlan(args: {
     const usual = typical.get(c.id) ?? 0;
     // Fees are checked first with a lower bar: even a few pounds is a free saving, unlike a category trim.
     if (c.id === 'fees') {
-      if (usual >= 200) ideas.push({ id: 'fees', kind: 'fees', categoryId: c.id, title: 'Stop paying fees', detail: `${fmt(usual)} a month on fees and charges that are avoidable.`, tip: TIPS.fees!, current: usual, target: 0, saving: usual, effort: 'easy', proven: false, counted: true });
+      if (usual >= everyday(2)) ideas.push({ id: 'fees', kind: 'fees', categoryId: c.id, title: 'Stop paying fees', detail: `${fmt(usual)} a month on fees and charges that are avoidable.`, tip: TIPS.fees!, current: usual, target: 0, saving: usual, effort: 'easy', proven: false, counted: true });
       continue;
     }
     if (usual < 1000) continue;
@@ -127,13 +128,13 @@ export function buildSavingsPlan(args: {
     // Never ask for more than the category can sensibly flex, and prefer a level you've already managed.
     const target = ceil5(Math.min(usual, Math.max(aggressive, best !== undefined && best < usual ? best : 0)));
     const saving = usual - target;
-    if (saving < 500) continue;
+    if (saving < everyday(5)) continue;
     const frac = saving / usual;
     const proven = best !== undefined && best <= target;
     const effort: Effort = proven ? (frac <= 0.15 ? 'easy' : 'medium') : frac <= 0.08 ? 'easy' : frac <= 0.18 ? 'medium' : 'hard';
     ideas.push({
       id: `cat:${c.id}`, kind: 'category', categoryId: c.id, title: `Trim ${c.name.toLowerCase()}`,
-      detail: `${fmt(usual, { whole: true })} usual → ${fmt(target, { whole: true })}.${proven ? (best! < 500 ? ' You’ve had a recent month with almost none, so this is achievable.' : ` You spent ${fmt(best!, { whole: true })} in a recent month, so this is achievable.`) : ''}`,
+      detail: `${fmt(usual, { whole: true })} usual → ${fmt(target, { whole: true })}.${proven ? (best! < everyday(5) ? ' You’ve had a recent month with almost none, so this is achievable.' : ` You spent ${fmt(best!, { whole: true })} in a recent month, so this is achievable.`) : ''}`,
       tip: TIPS[c.id] ?? 'Look at the three biggest payments in this category and ask which you’d miss least.',
       current: usual, target, saving, effort, proven, counted: true,
     });
@@ -146,12 +147,12 @@ export function buildSavingsPlan(args: {
     .slice(0, 3);
   for (const r of subs) {
     const m = perMonth(r);
-    if (m < 300) continue;
+    if (m < everyday(3)) continue;
     ideas.push({
       id: `sub:${r.key}`, kind: 'subscription', categoryId: 'subscriptions', title: `Cancel or pause ${r.merchant}`,
       detail: `${fmt(r.change?.to ?? r.amount)} ${r.cadence}, ${fmt((r.change?.to ?? r.amount) * (r.annual / Math.max(1, r.amount)), { whole: true })} a year.${r.change && r.change.to > r.change.from ? ` The price rose from ${fmt(r.change.from)} to ${fmt(r.change.to)}.` : ''}`,
       tip: 'Keep one service at a time and rotate. Cancelling takes a minute and most let you resubscribe later.',
-      current: m, target: 0, saving: m, effort: m <= 1000 ? 'easy' : 'medium', proven: false, counted: true,
+      current: m, target: 0, saving: m, effort: m <= everyday(10) ? 'easy' : 'medium', proven: false, counted: true,
     });
   }
 
@@ -159,14 +160,14 @@ export function buildSavingsPlan(args: {
   const since = addDays(args.asOf, -90);
   const small = args.txns.filter((t) => {
     const c = categories.find((x) => x.id === t.categoryId);
-    return t.date >= since && t.date <= args.asOf && t.amount < 0 && -t.amount < 500 && c?.kind === 'expense' && !c.fixed && c.id !== 'cash' && c.id !== 'fees';
+    return t.date >= since && t.date <= args.asOf && t.amount < 0 && -t.amount < everyday(5) && c?.kind === 'expense' && !c.fixed && c.id !== 'cash' && c.id !== 'fees';
   });
   const smallMonthly = Math.round(small.reduce((s, t) => s - t.amount, 0) / 3);
   const smallCount = Math.round(small.length / 3);
-  if (smallMonthly >= 1500 && smallCount >= 8) {
+  if (smallMonthly >= everyday(15) && smallCount >= 8) {
     ideas.push({
       id: 'habit:small', kind: 'habit', title: 'Small purchases add up',
-      detail: `About ${smallCount} purchases a month under £5 come to ${fmt(smallMonthly, { whole: true })}.`,
+      detail: `About ${smallCount} purchases a month under ${fmt(everyday(5), { whole: true })} come to ${fmt(smallMonthly, { whole: true })}.`,
       tip: 'Give small purchases a weekly allowance. They are the easiest spending to lose track of.',
       current: smallMonthly, target: Math.round(smallMonthly * 0.6), saving: Math.round(smallMonthly * 0.4), effort: 'medium', proven: false, counted: false,
     });
@@ -202,7 +203,7 @@ export function buildSavingsPlan(args: {
     const usual = typical.get(c.id) ?? 0;
     let t = usual;
     for (const i of counted) if (selected.has(i.id) && i.categoryId === c.id) t -= i.saving;
-    if (t >= 500) targets.set(c.id, c.id === 'subscriptions' ? Math.round(t) : ceil5(t));
+    if (t >= everyday(5)) targets.set(c.id, c.id === 'subscriptions' ? Math.round(t) : ceil5(t));
   }
   return { income, goal, debt: debtPlanned, spendable, typicalSpend, need, ideas, selected, identified, potential, gapLeft, reachable: gapLeft === 0, targets };
 }

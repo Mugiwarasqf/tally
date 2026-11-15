@@ -3,7 +3,7 @@ import { toCatMap } from '../domain/analytics/aggregate';
 import { incomePatternPatches } from '../domain/analytics/income';
 import { rentPatternPatches } from '../domain/analytics/rent';
 import { buildTxns, accountKey } from '../domain/import/build';
-import { pairTransfers } from '../domain/import/pair';
+import { pairReversals, pairTransfers } from '../domain/import/pair';
 import type { ParsedStatement } from '../domain/import/types';
 import type { Account, ImportedFile } from '../domain/types';
 import { db } from './db';
@@ -103,7 +103,7 @@ export async function refreshDerived(): Promise<number> {
   const cats = toCatMap(await db.categories.toArray());
   const asOf = all.reduce((m, t) => (t.date > m ? t.date : m), all[0]!.date);
   const { profile } = await loadSettings();
-  const patches = [...((await db.accounts.count()) > 1 ? pairTransfers(all) : []), ...incomePatternPatches(all, cats, asOf), ...rentPatternPatches(all, cats, asOf, profile)];
+  const patches = [...pairReversals(all), ...((await db.accounts.count()) > 1 ? pairTransfers(all) : []), ...incomePatternPatches(all, cats, asOf), ...rentPatternPatches(all, cats, asOf, profile)];
   for (const p of patches) await db.txns.update(p.id, p.patch);
   return patches.length;
 }
