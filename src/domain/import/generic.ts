@@ -72,7 +72,22 @@ interface Line {
   marker: 'bf' | 'cf' | 'total' | null;
   time?: string;
   ref?: string;
+  /** Payment-type code from a "Type" column, in the codes the categoriser knows. */
+  type?: string;
 }
+
+/**
+ * UK banks' payment-type codes, as printed in a "Type" column (Lloyds, Halifax, Bank of Scotland, TSB), mapped to
+ * the codes the categoriser already understands from HSBC. Unknown codes pass through unchanged.
+ */
+const TYPE_CODES: Record<string, string> = {
+  DEB: 'VIS', POS: 'VIS', CPT: 'ATM', FPI: 'CR', BGC: 'CR', MPI: 'CR', DEP: 'CR', FPO: 'BP', MPO: 'BP', PAY: 'BP',
+  CHG: 'FEE', FEE: 'FEE', DD: 'DD', SO: 'SO', BP: 'BP', TFR: 'TFR',
+};
+const typeCode = (s: string): string | undefined => {
+  const c = s.trim().toUpperCase();
+  return /^[A-Z)]{1,4}$/.test(c) ? TYPE_CODES[c] ?? c : undefined;
+};
 
 /** Facts a statement prints outside its table, in "label: value" or "label over value" form. */
 export interface Facts {
@@ -84,6 +99,8 @@ export interface Facts {
   countOut?: number;
   holder?: string;
   number?: string;
+  /** The account's own name when the statement prints one ("Pot name: Holiday"). */
+  name?: string;
 }
 
 export interface PdfAnalysis {
@@ -119,7 +136,8 @@ export interface PdfReading {
 // ---- tokens ----------------------------------------------------------------------------------
 
 const MONEY_RE = /^[-+]?\(?-?(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}\)?(?:\s?(?:CR|DR|D|-))?$/i;
-const normMoney = (s: string) => s.trim().replace(/[−–]/g, '-').replace(/[£₦$€]\s?|(?:GBP|NGN|USD|EUR)\s?/gi, '');
+// "+ $182.00" (GO2bank) has a space between the sign and the number once the currency sign is gone.
+const normMoney = (s: string) => s.trim().replace(/[−–]/g, '-').replace(/[£₦$€]\s?|(?:GBP|NGN|USD|EUR)\s?/gi, '').replace(/^([+-])\s+/, '$1');
 const isMoney = (s: string) => MONEY_RE.test(normMoney(s));
 const moneyValue = (s: string): Pence | null => parseMoney(normMoney(s));
 /** "--" or "—" printed in an empty money cell. */
@@ -219,7 +237,7 @@ function leadingTime(text: string): { time: string; len: number } | null {
 
 // ---- headings & markers ----------------------------------------------------------------------
 
-type HeadRole = MoneyRole | 'date' | 'description' | 'ref';
+type HeadRole = MoneyRole | 'date' | 'description' | 'ref' | 'type';
 const HEAD: Array<[HeadRole, RegExp]> = [
   ['amount', /\bin ?\/ ?out\b|\bout ?\/ ?in\b|paid in ?\/ ?out/i], // one signed column
   ['balance', /balance/i],
@@ -229,6 +247,7 @@ const HEAD: Array<[HeadRole, RegExp]> = [
   ['amount', /amount|value$/i],
   ['date', /date/i],
   ['ref', /^(?:transaction |trans\.? )?(?:reference|ref\.?)(?: ?(?:no\.?|number))?$|^(?:transaction|session) id$/i],
+  ['type', /^(?:transaction |payment |trans\.? )?type$/i],
   ['description', /description|details|transaction|narrative|narration|remarks?|particulars|payee|reference/i],
 ];
 const headRole = (s: string): HeadRole | null => HEAD.find(([, re]) => re.test(s.replace(/[£₦$€]|\(|\)/g, '').replace(/\s+/g, ' ').trim()))?.[0] ?? null;
@@ -257,17 +276,18 @@ const isHeader = (items: PdfItem[]) => {
   return roles.size >= 2 && MONEY_ROLES.some((r) => roles.has(r as MoneyRole));
 };
 
-const BF_RE = /brought forward|b\/f\b|opening balance|start(?:ing)? balance|previous balance|balance from previous/i;
+const BF_RE = /brought forward|b\/f\b|opening balance|start(?:ing)? balance|beginning balance|previous balance|balance from previous/i;
 const CF_RE = /carried forward|c\/f\b|closing balance|end(?:ing)? balance|balance to next/i;
 // "Total", "Sub total", and Zenith-style day footers such as "2 Debit(s) 1 Credit(s)".
-const TOTAL_RE = /^(?:sub ?)?totals?\b|^\d+\s*debits?(?:\(s\))?\s+\d+\s*credits?(?:\(s\))?/i;
+// Also page-turn notes ("(Continued on next page)"), which are not part of any description.
+const TOTAL_RE = /^(?:sub ?)?totals?\b|^\d+\s*debits?(?:\(s\))?\s+\d+\s*credits?(?:\(s\))?|^\(?continued (?:on|over)\b/i;
 const markerOf = (text: string): Line['marker'] => (BF_RE.test(text) ? 'bf' : CF_RE.test(text) ? 'cf' : TOTAL_RE.test(text) ? 'total' : null);
 
 // ---- summary boxes ---------------------------------------------------------------------------
 
 type FactKey = keyof Facts;
 const FACT_LABELS: Array<[FactKey, RegExp]> = [
-  ['opening', /^(?:opening|start(?:ing)?|previous) balance$|^balance (?:b\/f|brought forward)$/i],
+  ['opening', /^(?:opening|start(?:ing)?|beginning|previous) balance$|^balance (?:b\/f|brought forward)$/i],
   ['closing', /^(?:closing|end(?:ing)?) balance$|^balance (?:c\/f|carried forward)$/i],
   ['totalOut', /^total (?:debits?|withdrawals?|money out|paid out|payments out|outflows?|outgoings?)$/i],
   ['totalIn', /^total (?:credits?|deposits?|lodgements?|money in|paid in|payments in|inflows?|incomings?)$/i],
@@ -275,6 +295,7 @@ const FACT_LABELS: Array<[FactKey, RegExp]> = [
   ['countIn', /^(?:credit|deposit)s? count$|^(?:no\.?|number) of (?:credits|deposits|lodgements)$/i],
   ['holder', /^(?:account name|account holder|customer name)$/i],
   ['number', /^(?:account (?:number|no\.?)|nuban)$/i],
+  ['name', /^(?:pot|space|vault|pocket|jar|goal|savings?) name$/i],
 ];
 /** Labels that belong in a summary box even when Tally doesn't use their value. */
 const SUMMARY_WORDS = /^(?:current|available|effective available|cleared|uncleared|ledger|book) balance$|^(?:date printed|print date|statement date|start date|end date|period|account type|currency|sort ?code|branch|address|bvn)$/i;
@@ -354,27 +375,50 @@ interface TRow {
 }
 
 /** Text columns named by the table heading: where descriptions and references sit. */
-interface TextSpans { desc?: [number, number]; ref?: [number, number] }
-function textSpans(hdr: TRow | null): TextSpans {
+interface TextSpans { desc?: [number, number]; ref?: [number, number]; type?: [number, number] }
+function textSpans(hdr: TRow | null, rows: TRow[] = []): TextSpans {
   if (!hdr) return {};
   const ph = phrases(hdr.items);
   const span = (p: Phrase): [number, number] => {
     const next = ph.filter((q) => q.x0 > p.x1).map((q) => q.x0);
-    return [p.x0 - 8, next.length ? Math.min(...next) - 2 : Infinity];
+    // A heading can be centred over its column (Zenith), so the column starts where its text does: the leftmost
+    // place where text under the heading begins, if that happens on at least two rows.
+    const starts = new Map<number, number>();
+    for (const r of rows) {
+      for (const it of r.items) {
+        if (r.money.includes(it) || leadingDate(it.str) || it.x > p.x0 + 8 || it.x + it.w < p.x0) continue;
+        const k = Math.round(it.x);
+        starts.set(k, (starts.get(k) ?? 0) + 1);
+      }
+    }
+    const left = Math.min(p.x0 - 8, ...[...starts].filter(([, n]) => n >= 2).map(([x]) => x - 4));
+    return [left, next.length ? Math.min(...next) - 2 : Infinity];
   };
   const desc = ph.find((p) => p.role === 'description');
   const ref = ph.find((p) => p.role === 'ref');
-  if (!desc) return ref ? { desc: span(ref) } : {};
-  return { desc: span(desc), ref: ref ? span(ref) : undefined };
+  const type = ph.find((p) => p.role === 'type');
+  if (!desc) return ref ? { desc: span(ref), type: type ? span(type) : undefined } : {};
+  return { desc: span(desc), ref: ref ? span(ref) : undefined, type: type ? span(type) : undefined };
 }
 
-function buildRows(pages: PdfPage[]): TRow[][] {
-  const rows: TRow[][] = pages.map((page, pi) =>
-    groupRows(page).map((r: Row) => {
-      const items = mergeTouching(r.items).filter((i) => !isBlank(i.str));
-      return makeRow(pi, r.y, items);
-    }),
-  );
+/** A statement's own title line ("Pot statement"), normalised, or null. */
+function statementTitle(r: TRow): string | null {
+  const ph = phrases(r.items);
+  if (!ph.length || ph.length > 2) return null;
+  const s = ph[0]!.str.replace(/\s+/g, ' ').trim();
+  return /\bstatement\b/i.test(s) && s.length <= 40 && !/\d/.test(s) ? s.toLowerCase() : null;
+}
+
+/** Exported for tests and debugging only. */
+export function buildRows(pages: PdfPage[]): TRow[][] {
+  const rows: TRow[][] = pages.map((page, pi) => {
+    // Accessibility-tagged PDFs (Lloyds) add invisible text in a microscopic font: column names on every row, "blank."
+    // in empty cells, a "." after every value. Real text is a few points wide per character; drop anything far
+    // narrower, unless the page has hardly any widths at all (then the widths can't be trusted).
+    const visible = page.filter((i) => i.w / Math.max(1, i.str.length) > 0.5);
+    const items = visible.length >= Math.min(10, page.length / 2) ? visible : page;
+    return groupRows(items).map((r: Row) => makeRow(pi, r.y, mergeTouching(r.items).filter((i) => !isBlank(i.str))));
+  });
   // Dates split over two lines ("03-Aug-" above "2026"): give the date its year and drop the year line's copy.
   for (const pr of rows) {
     pr.forEach((r, i) => {
@@ -395,7 +439,12 @@ function buildRows(pages: PdfPage[]): TRow[][] {
 function makeRow(page: number, y: number, items: PdfItem[]): TRow {
   const money = items.filter((i) => isMoney(i.str));
   const text = joinItems(items.filter((i) => !money.includes(i)));
-  const date = leadingDate(text);
+  let date = leadingDate(text);
+  // "01/10/2026 - 15/11/2026" is the statement period, not a transaction.
+  if (date) {
+    const rest = /^\s*(?:-|–|to|until)\s*(.*)$/i.exec(text.slice(date.length));
+    if (rest && leadingDate(rest[1]!)) date = null;
+  }
   return { page, y, items, money, text, date, dateLen: date?.length ?? 0, header: isHeader(items), summary: false, facts: {} };
 }
 
@@ -414,17 +463,26 @@ function readSummaries(rows: TRow[][]): void {
       for (const p of labels) {
         const key = factKey(p.str);
         if (!key) continue;
-        // Value on the row below, starting under the label.
-        const v = below?.items.find((it) => (Math.abs(it.x - p.x0) <= 8 || (it.x >= p.x0 - 2 && it.x < p.x1)) && !isSummaryLabel(it.str));
-        if (v && assignFact(r.facts, key, v.str)) {
+        // Value on the row below, starting under the label, or (Monzo: "£1,034.09" over "Total outgoings") on a row
+        // just above, lined up with it. When both exist, the nearer one belongs to this label.
+        const near: Array<{ it: PdfItem; dy: number }> = [];
+        for (const it of below?.items ?? []) {
+          if ((Math.abs(it.x - p.x0) <= 8 || (it.x >= p.x0 - 2 && it.x < p.x1)) && !isSummaryLabel(it.str)) near.push({ it, dy: r.y - below!.y });
+        }
+        for (let j = i - 1; j >= 0 && pr[j]!.y - r.y <= 22; j--) {
+          for (const it of pr[j]!.items) if ((Math.abs(it.x + it.w - p.x1) <= 3 || Math.abs(it.x - p.x0) <= 3) && !isSummaryLabel(it.str)) near.push({ it, dy: pr[j]!.y - r.y });
+        }
+        near.sort((a, b) => a.dy - b.dy);
+        if (near.some((n) => assignFact(r.facts, key, n.it.str))) {
           aligned++;
           continue;
         }
         // Or on the same row, just to the right.
         const right = r.items.filter((it) => it.x >= p.x1 - 1).sort((a, b) => a.x - b.x)[0];
-        if (!right || right.x - p.x1 > 220 || isSummaryLabel(right.str) || headRole(right.str)) continue;
-        if ((key === 'holder' || key === 'number') && !/:\s*$/.test(p.str) && right.x - p.x1 > 60) continue;
-        assignFact(r.facts, key, right.str);
+        if (right && right.x - p.x1 <= 220 && !isSummaryLabel(right.str) && !headRole(right.str)
+          && !((key === 'holder' || key === 'number' || key === 'name') && !/:\s*$/.test(p.str) && right.x - p.x1 > 60)) {
+          assignFact(r.facts, key, right.str);
+        }
       }
       if (summaryish.length >= 2 && aligned >= 1) {
         r.summary = true;
@@ -436,6 +494,11 @@ function readSummaries(rows: TRow[][]): void {
 
 function assignFact(f: Facts, key: FactKey, raw: string): boolean {
   const s = raw.trim();
+  if (key === 'name') {
+    if (!/[A-Za-z]{2}/.test(s) || s.length > 40) return false;
+    f.name ??= s;
+    return true;
+  }
   if (key === 'holder') {
     if (!/[A-Za-z]{2}/.test(s) || /\d{4}/.test(s)) return false;
     f.holder ??= s;
@@ -503,7 +566,10 @@ export function analysePdfSections(pages: PdfPage[], opts: { saved?: PdfLayout[]
       let start = -1;
       let hdr: TRow | null = null;
       if (r.header) { start = i + 1; hdr = r; }
-      else if (!r.summary && r.date && (r.money.length || (pr[i + 1]?.money.length && r.y - pr[i + 1]!.y <= step * 3))) {
+      // A dated row with its amounts on it, on the row below, or (Wise: description, amounts, then "26 April 2023 |
+      // Transaction: …") just above it.
+      else if (!r.summary && r.date && (r.money.length || (pr[i + 1]?.money.length && r.y - pr[i + 1]!.y <= step * 3)
+        || (pr[i - 1]?.money.length && !pr[i - 1]!.summary && !pr[i - 1]!.header && pr[i - 1]!.y - r.y <= step * 1.8))) {
         start = i;
         // Rows carried over from the previous page sit above the first date.
         while (start > 0 && !pr[start - 1]!.header && !pr[start - 1]!.summary && pr[start - 1]!.y - pr[start]!.y <= step * 1.8 && pr[start - 1]!.money.length) start--;
@@ -517,10 +583,11 @@ export function analysePdfSections(pages: PdfPage[], opts: { saved?: PdfLayout[]
       if (start < 0) { i++; continue; }
       if (hdr) lastHeader = hdr;
       let j = start;
-      while (j < pr.length && !pr[j]!.header && !pr[j]!.summary && (j === start || pr[j - 1]!.y - pr[j]!.y <= tol)) {
-        inZone[p]![j] = true;
-        zoneHeader[p]![j] = hdr;
-        j++;
+      while (j < pr.length && !pr[j]!.header && !pr[j]!.summary && (j === start || pr[j - 1]!.y - pr[j]!.y <= tol)) j++;
+      // A "table" with no amount in it is something else that happens to look like a heading (a key to the
+      // payment-type codes, a list of terms). Leave it out.
+      if (pr.slice(start, j).some((r) => r.money.length)) {
+        for (let k = start; k < j; k++) { inZone[p]![k] = true; zoneHeader[p]![k] = hdr; }
       }
       i = Math.max(j, i + 1);
     }
@@ -530,12 +597,22 @@ export function analysePdfSections(pages: PdfPage[], opts: { saved?: PdfLayout[]
     throw new ImportError('No transaction table was found in this PDF. If it is a statement, download a CSV, OFX or QIF from online banking instead.');
   }
 
-  // Sections: a new summary box with an opening balance after transactions have been read starts a new account.
+  // Sections: after transactions have been read, a new account starts at a summary box with an opening balance,
+  // or at a statement title not seen before ("Personal Account statement", then "Pot statement"). A title printed
+  // on every page ("Your Statement") is not new and never splits.
   const flat = rows.flatMap((pr, p) => pr.map((r, i) => ({ r, zone: inZone[p]![i]!, hdr: zoneHeader[p]![i] ?? null })));
   const sections: Array<typeof flat> = [[]];
+  const titles = new Set<string>();
+  let lastOpening: Pence | undefined;
   let seenTxn = false;
   for (const e of flat) {
-    if (!e.zone && e.r.facts.opening !== undefined && seenTxn) {
+    const title = e.zone ? null : statementTitle(e.r);
+    const newTitle = !!title && !titles.has(title);
+    if (title) titles.add(title);
+    // A summary box repeated at the top of every page (Zenith) carries the same opening balance: not a new account.
+    const newOpening = e.r.facts.opening !== undefined && e.r.facts.opening !== lastOpening;
+    if (e.r.facts.opening !== undefined && !e.zone) lastOpening = e.r.facts.opening;
+    if (!e.zone && seenTxn && (newOpening || newTitle)) {
       // The section's title rows ("Savings Account") sit just above its summary box.
       const cur = sections[sections.length - 1]!;
       const moved: typeof flat = [];
@@ -575,7 +652,36 @@ interface SectionCtx {
   opts: { saved?: PdfLayout[]; year?: number };
 }
 
-function analyseSection(entries: Array<{ r: TRow; zone: boolean; hdr: TRow | null }>, ctx: SectionCtx): PdfAnalysis {
+/** A copy of a row moved left by `dx` points (money items stay identifiable as money). */
+function shiftRow(r: TRow, dx: number): TRow {
+  if (!dx) return r;
+  const items = r.items.map((it) => ({ ...it, x: it.x - dx }));
+  return { ...r, items, money: items.filter((_, k) => r.money.includes(r.items[k]!)) };
+}
+
+function analyseSection(rawEntries: Array<{ r: TRow; zone: boolean; hdr: TRow | null }>, ctx: SectionCtx): PdfAnalysis {
+  // Pages can be printed a few points to one side of each other (Barclays): when a page repeats the first page's
+  // table heading at an offset, move that page's table back into line so its columns match.
+  const baseHdr = rawEntries.find((e) => e.zone && e.hdr)?.hdr ?? null;
+  const basePh = baseHdr ? phrases(baseHdr.items) : [];
+  const shiftCache = new Map<TRow, number>();
+  const shiftOf = (h: TRow | null): number => {
+    if (!h || !baseHdr || h === baseHdr) return 0;
+    if (!shiftCache.has(h)) {
+      const ph = phrases(h.items);
+      const same = ph.length === basePh.length && ph.every((p, i) => p.str.toLowerCase() === basePh[i]!.str.toLowerCase());
+      const d = same ? median(ph.map((p, i) => p.x0 - basePh[i]!.x0), 0) : 0;
+      shiftCache.set(h, Math.abs(d) >= 2 ? d : 0);
+    }
+    return shiftCache.get(h)!;
+  };
+  const shiftedHdr = new Map<TRow, TRow>();
+  const entries = rawEntries.map((e) => {
+    const dx = e.zone ? shiftOf(e.hdr) : 0;
+    if (!dx || !e.hdr) return e;
+    if (!shiftedHdr.has(e.hdr)) shiftedHdr.set(e.hdr, shiftRow(e.hdr, dx));
+    return { ...e, r: shiftRow(e.r, dx), hdr: shiftedHdr.get(e.hdr)! };
+  });
   const zoneRows = entries.filter((e) => e.zone);
   const outsideRows = entries.filter((e) => !e.zone).map((e) => e.r);
 
@@ -609,24 +715,31 @@ function analyseSection(entries: Array<{ r: TRow; zone: boolean; hdr: TRow | nul
 
   const spansOf = new Map<TRow | null, TextSpans>();
   let lines: Line[] = zoneRows.map(({ r, hdr }) => {
-    if (!spansOf.has(hdr)) spansOf.set(hdr, textSpans(hdr));
+    if (!spansOf.has(hdr)) spansOf.set(hdr, textSpans(hdr, zoneRows.filter((z) => z.hdr === hdr).map((z) => z.r)));
     const spans = spansOf.get(hdr)!;
-    const dateText = r.date ?? '';
-    let rest = r.date ? r.text.slice(r.dateLen).trim() : r.text;
-    const tm = r.date ? leadingTime(rest) : null;
+    // A date only counts if it sits left of the description column; one inside it ("07 Sep" on a continuation line)
+    // is part of the description.
+    const first = r.items.find((it) => !r.money.includes(it));
+    const dated = !!r.date && !(spans.desc && first && first.x >= spans.desc[0] && first.x > (hdr?.items[0]?.x ?? 0) + 20);
+    const dateText = dated ? r.date! : '';
+    let rest = dated ? r.text.slice(r.dateLen).trim() : r.text;
+    const tm = dated ? leadingTime(rest) : null;
     if (tm) rest = rest.slice(tm.len).trim();
     let text: string;
     let ref: string | undefined;
+    let payType: string | undefined;
     if (spans.desc) {
       // The heading says where descriptions are: anything else on the row (channel, value date, reference) is not one.
       const words = r.items.filter((it) => !r.money.includes(it));
       const inside = (it: PdfItem, s?: [number, number]) => !!s && it.x >= s[0] && it.x < s[1];
-      text = joinItems(words.filter((it) => inside(it, spans.desc) && !(r.date && it.x < (words[0]?.x ?? 0) + 1 && leadingDate(it.str))));
+      text = joinItems(words.filter((it) => inside(it, spans.desc) && !(dated && it.x < (words[0]?.x ?? 0) + 1 && leadingDate(it.str))));
       const refText = joinItems(words.filter((it) => inside(it, spans.ref)));
       const loose = words.filter((it) => !inside(it, spans.desc) && !inside(it, spans.ref)).map((it) => it.str.trim()).find((s) => /^(?=.*\d)[A-Z0-9/-]{6,}$/i.test(s) && !leadingDate(s));
       ref = refText || loose || undefined;
+      const code = joinItems(words.filter((it) => inside(it, spans.type)));
+      if (code) payType = typeCode(code);
     } else {
-      const second = r.date ? leadingDate(rest) : null; // a value date printed next to the posting date
+      const second = dated ? leadingDate(rest) : null; // a value date printed next to the posting date
       text = second ? rest.slice(second.length).trim() : rest;
     }
     text = text.replace(/^[\s,.:;–-]+(?=\S)/, '').trim();
@@ -637,6 +750,7 @@ function analyseSection(entries: Array<{ r: TRow; zone: boolean; hdr: TRow | nul
     };
     if (tm) line.time = tm.time;
     if (ref) line.ref = ref;
+    if (payType) line.type = payType;
     return line;
   });
 
@@ -659,9 +773,13 @@ function analyseSection(entries: Array<{ r: TRow; zone: boolean; hdr: TRow | nul
     if (v !== null && mk === 'cf' && outside.closing === undefined) outside.closing = v;
   });
   number ??= ctx.docFacts.number;
-  // In a statement holding several accounts, the section's title names it ("Wallet Account", "Savings Account").
+  // In a statement holding several accounts, name each one: the printed pot or account name, else its title
+  // ("Wallet Account", "Savings Account"), else the statement title without the word "statement".
+  const statementName = outsideRows.map(statementTitle).find(Boolean);
   const title = ctx.multi
-    ? outsideRows.map((r) => phrases(r.items)[0]?.str ?? '').find((s) => /\b(?:account|wallet|savings?|current|pot)\b/i.test(s) && !/statement/i.test(s) && !isSummaryLabel(s) && s.length <= 40)
+    ? facts.name
+      ?? (statementName ? outsideRows.map((r) => phrases(r.items)[0]?.str ?? '').find((s) => s.toLowerCase() === statementName)?.replace(/\s*statement\s*/i, ' ').trim().replace(/^\S+$/, '') || undefined : undefined)
+      ?? outsideRows.map((r) => phrases(r.items)[0]?.str ?? '').find((s) => /\b(?:account|wallet|savings?|current|pot)\b/i.test(s) && !/statement|balance|[\d:]/i.test(s) && !isSummaryLabel(s) && s.length <= 40)
     : undefined;
 
   const dateOrder = detectDateOrder(lines.filter((l) => l.dateText).map((l) => l.dateText));
@@ -726,6 +844,9 @@ function findBlocks(lines: Line[]): Line[] | null {
   const freq = new Map<number, number>();
   for (const g of gaps) if (g > 0) freq.set(g, (freq.get(g) ?? 0) + 1);
   const uniq = [...freq.entries()].filter(([, n]) => n >= Math.max(1, Math.ceil(gaps.length * 0.03))).map(([g]) => g).sort((a, b) => a - b);
+  // A cut that leaves dates on their own (Wise prints the date line under the amounts) is kept only as a fallback
+  // while a wider cut is tried.
+  let fallback: Line[] | null = null;
   for (let k = 1; k < uniq.length; k++) {
     if (uniq[k]! / uniq[k - 1]! < 1.8) continue;
     const cut = (uniq[k]! + uniq[k - 1]!) / 2;
@@ -742,10 +863,12 @@ function findBlocks(lines: Line[]): Line[] | null {
       if (!a.some((l) => l.money.length) && b[0]!.page === a[0]!.page + 1 && b.some((l) => l.money.length)) { groups[g + 1] = [...a, ...b]; groups[g] = []; }
     }
     const withMoney = groups.filter((g) => g.some((l) => l.money.length));
-    if (groups.some((g) => g.filter((l) => l.money.length).length > 1)) return null;
-    // Too few multi-row blocks at this cut: the gap was noise between rows; try the next jump.
-    if (!withMoney.length || withMoney.filter((g) => g.length > 1).length < withMoney.length * 0.3) continue;
-    return withMoney.map((g) => {
+    if (groups.some((g) => g.filter((l) => l.money.length).length > 1)) return fallback;
+    // Too few multi-row blocks at this cut: the gap was noise between rows; try the next jump. Some statements wrap
+    // only the odd long description (Monzo), so a few clear blocks are enough; no block ever holds two amounts.
+    const multi = withMoney.filter((g) => g.length > 1).length;
+    if (!withMoney.length || !(multi >= Math.max(2, withMoney.length * 0.05) || (multi && multi >= withMoney.length * 0.3))) continue;
+    const merged = withMoney.map((g) => {
       const main = g.find((l) => l.money.length)!;
       const merged: Line = {
         page: main.page, y: main.y,
@@ -758,10 +881,15 @@ function findBlocks(lines: Line[]): Line[] | null {
       if (time) merged.time = time;
       const ref = g.flatMap((l) => (l.ref ? [l.ref] : [])).join('');
       if (ref) merged.ref = ref;
+      const type = g.find((l) => l.type)?.type;
+      if (type) merged.type = type;
       return merged;
     });
+    const strandedDates = groups.some((g) => !g.some((l) => l.money.length) && g.some((l) => l.dateText));
+    if (!strandedDates) return merged;
+    fallback ??= merged;
   }
-  return null;
+  return fallback;
 }
 
 function validRoles(r: MoneyRole[]): boolean {
@@ -886,6 +1014,7 @@ function readWith(a: Omit<PdfAnalysis, 'roles' | 'fromSaved' | 'result'>, roles:
       const d: Draft = { parts: curDate, lines: light ? [] : [...pending, ...l.texts], amount: amt ?? 0, type: '' };
       if (l.time) d.time = l.time;
       if (l.ref) d.ref = l.ref;
+      if (l.type) d.type = l.type;
       drafts.push(d);
       last = d;
       // A fee is its own transaction, after the payment it belongs to; the printed balance comes after both.
@@ -898,6 +1027,8 @@ function readWith(a: Omit<PdfAnalysis, 'roles' | 'fromSaved' | 'result'>, roles:
     } else if (bal !== undefined) {
       if (last && last.balance === undefined) last.balance = bal;
       else if (!drafts.length && opening === undefined) opening = bal;
+      // Barclays repeats the balance on a description's second line; the text still belongs to the payment.
+      if (l.texts.length && !light && a.style === 'first' && last && !l.dateText) last.lines.push(...l.texts);
     } else if (l.texts.length && !light) {
       if (a.style === 'first' && last && !l.dateText) last.lines.push(...l.texts);
       else pending.push(...l.texts);
@@ -966,9 +1097,13 @@ function readWith(a: Omit<PdfAnalysis, 'roles' | 'fromSaved' | 'result'>, roles:
     }
   }
   rec = reconcile(txns, start, inferred, unsigned, true);
+  // With no balance column (many US statements), the printed opening and closing balances still prove the reading:
+  // the opening plus every transaction must come to the closing balance exactly.
+  const ends = !hasBalance && opening !== undefined && closing !== undefined && txns.length
+    ? opening + txns.reduce((s, t) => s + t.amount, 0) === closing : null;
   const stats: Stats = {
     confirmed: rec.confirmed, wrong: rec.wrong, flipped: rec.flipped, reordered: rec.reordered, hasBalance, openingFixed,
-    closingOk: start !== undefined && closing !== undefined && hasBalance ? rec.end === closing : null,
+    closingOk: hasBalance ? (start !== undefined && closing !== undefined ? rec.end === closing : null) : ends,
     totalsOk: null,
   };
 
@@ -987,7 +1122,12 @@ function readWith(a: Omit<PdfAnalysis, 'roles' | 'fromSaved' | 'result'>, roles:
 
   const checks: Check[] = [];
   let reason: string | undefined;
-  if (!hasBalance) {
+  if (!hasBalance && ends !== null) {
+    checks.push(ends
+      ? { name: 'Opening and closing balances agree', ok: true, detail: `${fmt(opening!)} plus every transaction comes to ${fmt(closing!)}.` }
+      : { name: 'Opening and closing balances do not agree', ok: false, detail: `${fmt(opening!)} plus the transactions read comes to ${fmt(opening! + txns.reduce((s, t) => s + t.amount, 0))}; the statement says ${fmt(closing!)}.` });
+    if (!ends) reason = 'The transactions read don’t take the opening balance to the closing balance. A column may be the wrong way round.';
+  } else if (!hasBalance) {
     reason = 'This statement has no balance column that Tally could find, so the reading cannot be proved.';
     checks.push({ name: 'No balance to check against', ok: false, detail: 'Compare the preview with your statement before importing.' });
   } else {
@@ -1058,7 +1198,7 @@ function readWith(a: Omit<PdfAnalysis, 'roles' | 'fromSaved' | 'result'>, roles:
     checks,
     warnings,
   };
-  const verified = !reason && txns.length > 0 && (stats.confirmed >= 2 || (stats.confirmed >= 1 && txns.length <= 2)) && !skipped;
+  const verified = !reason && txns.length > 0 && (stats.confirmed >= 2 || (stats.confirmed >= 1 && txns.length <= 2) || ends === true) && !skipped;
   if (!reason && !verified) reason = skipped ? 'Some rows had no date.' : 'Too few printed balances to be sure.';
   return { parsed, verified, reason: verified ? undefined : reason, stats };
 }

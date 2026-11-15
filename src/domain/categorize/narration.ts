@@ -64,6 +64,9 @@ export function readNarration(rawLines: string[], amount: number): Narration | n
 
   // Cash machines.
   if (/\bATM\b.*\b(?:WD|WDL|WITHDRAWAL|CASH)\b|\bCASH WITHDRAWAL\b/.test(H) && out) return { type: 'ATM', lines: [text] };
+  // Cash over the counter: "csh-wtdl self", "CWP NAME" (cash withdrawal), "CSH DEP NAME" (cash paid in).
+  if (out && /\bCSH[- ]?W(?:TDL|DL)\b|^CWP\b|\bCASH W(?:TDL|DL)\b/.test(H)) return { type: 'ATM', lines: [text] };
+  if (!out && /^(?:CSH|CASH)[- ]?DEP\b/.test(H)) return { type: 'CR', lines: ['Cash deposit', text] };
 
   // Card payments: "POS Buy on 03-08-2026@Psk*SHOP", "WEB Buy on ...@SHOP", "POS PURCHASE ... SHOP".
   const card = /\b(?:POS|WEB|ONLINE|CARD)\s*(?:BUY|PURCHASE|PMT|PAYMENT|TRAN)\b[^@]*@\s*(.+)$/i.exec(text);
@@ -84,6 +87,11 @@ export function readNarration(rawLines: string[], amount: number): Narration | n
   if (m && !/REVERSAL/i.test(H)) return { type: out ? 'BP' : 'CR', lines: [toFrom(out ? m[1]! : m[2]!), 'NIP transfer'] };
   m = /\bTRANSFER TO\s+(.+?)\s*FROM\s*(.+)$/i.exec(text); // "ALAT TRANSFER TO Y FROM X"
   if (m && !/REVERSAL/i.test(H)) return { type: out ? 'BP' : 'CR', lines: [toFrom(out ? m[1]! : m[2]!), 'Transfer'] };
+  // Zenith: "NIP CR/NAME/BANK", "NIP/GTB/NAME/note" (bank code, then the other side's name).
+  m = /^NIP\s*(?:CR)?\s*\/+\s*(?:([A-Z]{2,5})\/)?([^/]+?)\s*(?:\/(.*))?$/i.exec(text);
+  if (m && /[A-Za-z]{2,}\s+[A-Za-z]/.test(m[2]!)) return { type: out ? 'BP' : 'CR', lines: [toFrom(m[2]!), clean(m[3] ?? m[1] ?? '') || 'NIP transfer'] };
+  m = /^OUTFLOW TO\s+(.+)$/i.exec(text);
+  if (m) return { type: 'BP', lines: [toFrom(m[1]!), 'Transfer'] };
   m = /^(?:NIP|FIP|NIBSS)\s*[:/]\s*([^-/|]+?)\s*[-/|]\s*(.*)$/i.exec(text); // "NIP:NAME-what for"
   if (m) return { type: out ? 'BP' : 'CR', lines: [toFrom(m[1]!), clean(m[2]!) || 'NIP transfer'] };
   m = /^(?:TRF|TRANSFER|MOB\s*TRF|FT)\s*(?:TO|FRM|FROM)\s*[:-]?\s*([A-Z][A-Z .'-]{3,}?)(?:\s*[|/,]|\s{2,}|$)/i.exec(text);

@@ -37,6 +37,8 @@ Only when a balance column exists, every printed balance agrees, at least two ar
 
 The first row is never counted as proof when there is no printed opening balance, because its balance is what the opening is worked out from.
 
+A statement with **no balance column** (common in the US) is verified another way: the printed opening balance plus every transaction must come to the printed closing balance exactly. Printed totals and counts, where shown, are a further check on any statement.
+
 ## Evidence
 
 - Invented fixtures in `tests/fixtures/genericPages.ts`: headed and unheaded tables, signed and unsigned amounts, no year, newest-first, fees, no balance column.
@@ -44,8 +46,29 @@ The first row is never counted as proof when there is no printed opening balance
   - three HSBC statements (195, 240 and 220 transactions);
   - one Revolut statement (902 transactions, found as signed amount + balance + fee).
 
+- On friends' Monzo and Lloyds statements (never committed): Monzo's current account and savings pot are split apart and each verified; the Lloyds statement verifies once its invisible accessibility text is ignored.
+- On a public collection of sample statements from about 120 banks (financefileconverter.com, used locally only and never committed, since no licence is stated), 45 of 128 accounts are fully proved. Most of the rest are scanned images, European number formats, statements with no balance and no printed opening/closing, or samples whose own numbers don't add up (the Zenith sample is 3 pages of a 10-page statement, with arithmetic slips). Those are correctly left unproved.
+
+## Layouts learned from other banks
+
+| Seen | Handled by |
+|---|---|
+| Invisible accessibility text in a microscopic font: column names on every row, "blank." in empty cells, a "." after every value (Lloyds) | Text far narrower than real characters is dropped. |
+| A key to the payment codes that looks like a table heading (Lloyds) | A "table" with no amounts in it is ignored. |
+| A Type column (FPI, FPO, DEB, BGC…) | Mapped to the payment types the categoriser knows, so card spending and payments to people are recognised. |
+| Several accounts with their own titles (Monzo "Personal Account statement", then "Pot statement") | A statement title not seen before starts a new account; a title repeated on every page does not. The pot's printed name labels it. |
+| Summary values printed above their labels (Monzo) | The nearer of the value above and the value below is taken. |
+| The statement period ("01/10/2026 - 15/11/2026") | A date range is never a transaction. |
+| A summary box repeated at the top of every page (Zenith) | The same opening balance again doesn't start a new account. |
+| A heading centred over a column whose text starts further left (Zenith) | The column starts where its text does. |
+| Pages printed a few points apart (Barclays) | A page repeating the first heading at an offset is moved back into line. |
+| Continuation lines starting with a date ("On / 07 Sep"), or repeating the balance (Barclays) | A date inside the description column is description; the text of a balance-only line stays with its payment. |
+| Date printed under the amounts (Wise) | A date with its amounts just above starts the table; blocks prefer the grouping that keeps each date with its amount. |
+| "+ $182.00" with a space after the sign (GO2bank) | Read as money. |
+
 ## Limits
 
 - Scanned (image-only) PDFs have no text to read; the user is pointed to a downloaded PDF or CSV.
 - One currency per device. A statement in another currency than the region's is stopped at import (see `07-regions.md`, which also covers the layouts learned from Nigerian statements).
-- Statements with no balance column can be imported, but only after the user confirms the columns, and they show as not reconciled.
+- Statements with no balance column and no printed opening and closing balance can be imported, but only after the user confirms the columns, and they show as not reconciled.
+- Comma-decimal (European) amounts and currencies outside the three regions are not read.
