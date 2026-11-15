@@ -76,7 +76,9 @@ describe('generic PDF reader', () => {
     const h = parseHsbc(syntheticHsbc());
     expect(a.result.verified).toBe(true);
     expect(a.result.parsed.txns.map((t) => [t.date, t.amount, t.balance])).toEqual(h.txns.map((t) => [t.date, t.amount, t.balance]));
-    expect(a.result.parsed.txns[0]!.lines).toEqual(['CR Acme Payroll Ltd', 'Wages']);
+    // The payment codes HSBC prints before each description become the payment type, exactly as the dedicated parser does.
+    expect(a.result.parsed.txns.map((t) => [t.type, t.lines])).toEqual(h.txns.map((t) => [t.type, t.lines]));
+    expect(a.result.parsed.txns[0]!.lines).toEqual(['Acme Payroll Ltd', 'Wages']);
     expect(a.bank).toBe('HSBC');
   });
 

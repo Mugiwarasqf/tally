@@ -121,3 +121,23 @@ export function accountWithPot(): PdfPage[] {
     ],
   ];
 }
+
+/**
+ * An app-bank layout: a Category column ("Merchant", "Top up", "Others"), names that wrap when the next word won't
+ * fit before the Category column, "Payment from / Transfer to NAME" wording, and moves to the account's own savings.
+ */
+export function categoryColumn(): PdfPage[] {
+  const row = (y: number, date: string, desc: string, cat: string, amt: string, bal: string): PdfItem[] => [
+    t(40, y, date), t(125, y, desc), t(258, y, cat), r(375, y, amt), r(415, y, bal),
+  ];
+  return [[
+    t(40, 700, 'Opening balance'), r(415, 700, '£100.00'), t(40, 688, 'Closing balance'), r(415, 688, '£79.00'),
+    t(40, 590, 'Date'), t(125, 590, 'Description'), t(258, 590, 'Category'), t(343, 590, 'Money in/out'), t(385, 590, 'Balance'),
+    // 'Payment from SAMPLE SERVICES' ends at 251; 'LTD' (13.5 wide) would not fit before 256, so it wrapped.
+    ...row(560, '6 Mar 2026', 'Payment from SAMPLE SERVICES', 'Top up', '£50.00', '£150.00'), t(125, 550, 'LTD'),
+    ...row(530, '7 Mar 2026', 'SAMPLE COFFEE', 'Merchant', '-£4.00', '£146.00'), t(125, 520, 'London'),
+    ...row(500, '8 Mar 2026', 'Transfer to SAMPLE FRIEND', 'Others', '-£20.00', '£126.00'),
+    ...row(480, '9 Mar 2026', 'To GBP Savings', 'Others', '-£50.00', '£76.00'),
+    ...row(460, '10 Mar 2026', 'From GBP Savings', 'Others', '£3.00', '£79.00'),
+  ]];
+}

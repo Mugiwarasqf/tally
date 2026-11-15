@@ -65,6 +65,12 @@ A statement with **no balance column** (common in the US) is verified another wa
 | Continuation lines starting with a date ("On / 07 Sep"), or repeating the balance (Barclays) | A date inside the description column is description; the text of a balance-only line stays with its payment. |
 | Date printed under the amounts (Wise) | A date with its amounts just above starts the table; blocks prefer the grouping that keeps each date with its amount. |
 | "+ $182.00" with a space after the sign (GO2bank) | Read as money. |
+| Payment codes printed at the start of each description ("))) SHOP", "BP NAME", "CR NAME": HSBC, First Direct) | When most descriptions start with a known code, it becomes the payment type and is taken off the description. |
+| A Category column in words ("Merchant", "Top up": Revolut) | Treated as a Type column: Merchant is a card payment, Top up is money in. |
+| "Payment from / Transfer to / To NAME", "To GBP Savings", "Transfer to Pot" | The name becomes the payee and the kind of payment is set; moves to the account's own savings are pot transfers. Not used in the Nigeria region, where the narration reader handles the fuller wording. |
+| A long name wrapped onto the next line (Revolut, Barclays, NatWest) | A line is joined to the one above when its first word would not have fitted there; separate lines (a town, a reference) stay separate. |
+
+With these, the generic reader gives exactly what the dedicated HSBC and Revolut parsers give on the maintainer's real statements: 1,557 transactions with the same dates, amounts, payment types and description lines. The dedicated parsers are still used first for those two banks until that has held for a while.
 
 ## Limits
 

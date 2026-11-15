@@ -84,10 +84,59 @@ const TYPE_CODES: Record<string, string> = {
   DEB: 'VIS', POS: 'VIS', CPT: 'ATM', FPI: 'CR', BGC: 'CR', MPI: 'CR', DEP: 'CR', FPO: 'BP', MPO: 'BP', PAY: 'BP',
   CHG: 'FEE', FEE: 'FEE', DD: 'DD', SO: 'SO', BP: 'BP', TFR: 'TFR',
 };
+/** A Type or Category column that names the kind of payment in words (Revolut: "Merchant", "Top up"). */
+const TYPE_WORDS: Record<string, string> = { MERCHANT: 'VIS', 'CARD PAYMENT': 'VIS', 'CARD PURCHASE': 'VIS', 'TOP UP': 'CR', 'TOP-UP': 'CR', 'DIRECT DEBIT': 'DD', 'STANDING ORDER': 'SO' };
 const typeCode = (s: string): string | undefined => {
-  const c = s.trim().toUpperCase();
-  return /^[A-Z)]{1,4}$/.test(c) ? TYPE_CODES[c] ?? c : undefined;
+  const c = s.replace(/\s+/g, ' ').trim().toUpperCase();
+  return TYPE_WORDS[c] ?? (/^[A-Z)]{1,4}$/.test(c) ? TYPE_CODES[c] ?? c : undefined);
 };
+
+/**
+ * Payment codes some banks print at the start of each description instead of in a column of their own (HSBC:
+ * "))) SHOP", "BP NAME", "CR NAME"). Only taken when most of the statement's descriptions start with one.
+ */
+const LEADING_CODES = new Set([')))', 'VIS', 'TFR', 'BP', 'CR', 'DR', 'DD', 'SO', 'ATM', 'CHQ', 'OBP', 'PAY', 'DEB', 'FPI', 'FPO', 'BGC', 'DEP', 'CPT', 'CHG', 'FEE', 'MPI', 'MPO', 'POS', 'PIM', 'DDR', 'VRP']);
+const leadingCode = (s: string): [string, string] | null => {
+  const m = /^(\){3}|[A-Z]{2,3})\s+(\S.*)$/.exec(s);
+  return m && LEADING_CODES.has(m[1]!) ? [m[1]!, m[2]!] : null;
+};
+
+/** Marks a description line that is the wrapped tail of the line above it (see `joinWrapped`). */
+const WRAP = '\u0001';
+const joinWrapped = (lines: string[]): string[] => {
+  const out: string[] = [];
+  for (const s of lines) {
+    if (s.startsWith(WRAP) && out.length) out[out.length - 1] += ` ${s.slice(1)}`;
+    else out.push(s.replace(WRAP, ''));
+  }
+  return out;
+};
+
+/**
+ * The kind of payment, from the statement's own codes or wording, for rows that have no Type column: leading codes
+ * (when most rows have one), "Transfer to / To NAME" out, "Payment from / Transfer from / From NAME" in, and money
+ * moved to or from the account's own savings ("To GBP Savings").
+ */
+function readWording(txns: RawTxn[]): void {
+  const coded = txns.filter((t) => t.lines[0] && leadingCode(t.lines[0])).length;
+  const useCodes = txns.length >= 3 && coded >= txns.length * 0.5;
+  for (const t of txns) {
+    if (useCodes && !t.type) {
+      const c = t.lines[0] ? leadingCode(t.lines[0]) : null;
+      if (c) { t.type = TYPE_CODES[c[0]] ?? c[0]; t.lines = [c[1], ...t.lines.slice(1)]; }
+    }
+    // Nigerian narrations ("Transfer to NAME | Bank | account", "Transfer to POS Transfer - NAME") carry more than a
+    // name; the Nigerian narration reader handles those whole (categorize/narration.ts).
+    if (region().id === 'ng') continue;
+    if (t.type && t.type !== 'CR' && t.type !== 'BP') continue;
+    const first = t.lines[0] ?? '';
+    if (/^(?:transfer )?(?:to|from) (?:[A-Z]{3} )?(?:savings|pot)$/i.test(first)) { t.type = 'POT'; t.lines = ['Savings pot', ...t.lines]; continue; }
+    const to = /^(?:transfer to|to)\s+(\S.*)$/i.exec(first);
+    if (to && t.amount < 0 && t.type !== 'CR') { t.type = 'BP'; t.lines = [to[1]!, ...t.lines.slice(1)]; continue; }
+    const from = /^(?:transfer from|payment from|from)\s+(\S.*)$/i.exec(first);
+    if (from && t.amount > 0 && t.type !== 'BP') { t.type = 'CR'; t.lines = [from[1]!, ...t.lines.slice(1)]; }
+  }
+}
 
 /** Facts a statement prints outside its table, in "label: value" or "label over value" form. */
 export interface Facts {
@@ -266,7 +315,7 @@ const HEAD: Array<[HeadRole, RegExp]> = [
   ['amount', /amount|value$/i],
   ['date', /date/i],
   ['ref', /^(?:transaction |trans\.? )?(?:reference|ref\.?)(?: ?(?:no\.?|number))?$|^(?:transaction|session) id$/i],
-  ['type', /^(?:transaction |payment |trans\.? )?type$/i],
+  ['type', /^(?:transaction |payment |trans\.? )?type$|^category$/i],
   ['description', /description|details|transaction|narrative|narration|remarks?|particulars|payee|reference/i],
 ];
 const headRole = (s: string): HeadRole | null => HEAD.find(([, re]) => re.test(s.replace(/[£₦$€]|\(|\)/g, '').replace(/\s+/g, ' ').trim()))?.[0] ?? null;
@@ -733,6 +782,9 @@ function analyseSection(rawEntries: Array<{ r: TRow; zone: boolean; hdr: TRow | 
   }
 
   const spansOf = new Map<TRow | null, TextSpans>();
+  // Where the description column ends: the next heading, or for a last column, the widest line printed in it.
+  const descEnd = new Map<TRow | null, number>();
+  let above: { page: number; right: number } | null = null;
   let lines: Line[] = zoneRows.map(({ r, hdr }) => {
     if (!spansOf.has(hdr)) spansOf.set(hdr, textSpans(hdr, zoneRows.filter((z) => z.hdr === hdr).map((z) => z.r)));
     const spans = spansOf.get(hdr)!;
@@ -747,11 +799,26 @@ function analyseSection(rawEntries: Array<{ r: TRow; zone: boolean; hdr: TRow | 
     let text: string;
     let ref: string | undefined;
     let payType: string | undefined;
+    let wrap = false;
     if (spans.desc) {
       // The heading says where descriptions are: anything else on the row (channel, value date, reference) is not one.
       const words = r.items.filter((it) => !r.money.includes(it));
       const inside = (it: PdfItem, s?: [number, number]) => !!s && it.x >= s[0] && it.x < s[1];
-      text = joinItems(words.filter((it) => inside(it, spans.desc) && !(dated && it.x < (words[0]?.x ?? 0) + 1 && leadingDate(it.str))));
+      const descItems = words.filter((it) => inside(it, spans.desc) && !(dated && it.x < (words[0]?.x ?? 0) + 1 && leadingDate(it.str)));
+      text = joinItems(descItems);
+      // A line is the wrapped tail of the one above when its first word would not have fitted on that line.
+      if (!descEnd.has(hdr)) {
+        const rights = zoneRows.filter((z) => z.hdr === hdr).flatMap((z) => z.r.items.filter((it) => !z.r.money.includes(it) && inside(it, spans.desc)).map((it) => it.x + it.w));
+        descEnd.set(hdr, Number.isFinite(spans.desc![1]) ? spans.desc![1] : Math.max(0, ...rights));
+      }
+      const head = descItems[0];
+      if (head && text) {
+        const cw = head.w / Math.max(1, head.str.length);
+        const firstWord = text.split(' ')[0]!;
+        const wrapped = above && above.page === r.page && above.right + cw + firstWord.length * cw > descEnd.get(hdr)! + 1;
+        above = { page: r.page, right: Math.max(...descItems.map((it) => it.x + it.w)) };
+        if (wrapped) wrap = true;
+      } else above = null;
       const refText = joinItems(words.filter((it) => inside(it, spans.ref)));
       const loose = words.filter((it) => !inside(it, spans.desc) && !inside(it, spans.ref)).map((it) => it.str.trim()).find((s) => /^(?=.*\d)[A-Z0-9/-]{6,}$/i.test(s) && !leadingDate(s));
       ref = refText || loose || undefined;
@@ -762,6 +829,7 @@ function analyseSection(rawEntries: Array<{ r: TRow; zone: boolean; hdr: TRow | 
       text = second ? rest.slice(second.length).trim() : rest;
     }
     text = text.replace(/^[\s,.:;–-]+(?=\S)/, '').trim();
+    if (wrap && text) text = WRAP + text;
     const line: Line = {
       page: r.page, y: r.y, dateText, texts: text ? [text] : [],
       money: r.money.map((t) => ({ col: colOf(t), value: moneyValue(t.str) })).filter((m): m is { col: number; value: Pence } => m.col >= 0 && m.value !== null),
@@ -1090,13 +1158,15 @@ function readWith(a: Omit<PdfAnalysis, 'roles' | 'fromSaved' | 'result'>, roles:
       if (descending && d.parts.m > prevM && d.parts.m - prevM > 6) year--;
     }
     prevM = d.parts.m;
-    const t: RawTxn = { date: makeDate(year, d.parts.m, d.parts.d), amount: d.amount, type: d.type, lines: d.lines.length || light ? d.lines : ['(no description)'] };
+    const lines = joinWrapped(d.lines);
+    const t: RawTxn = { date: makeDate(year, d.parts.m, d.parts.d), amount: d.amount, type: d.type, lines: lines.length || light ? lines : ['(no description)'] };
     if (d.balance !== undefined) t.balance = d.balance;
     if (d.time) t.time = d.time;
     if (d.ref) t.ref = d.ref;
     if (t.amount !== 0) txns.push(t);
   }
   if (descending) txns.reverse();
+  if (!light) readWording(txns);
 
   // Reconcile against the printed balance.
   const hasBalance = roles.includes('balance');

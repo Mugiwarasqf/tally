@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { analysePdfSections } from '../../../src/domain/import/generic';
 import { setRegion } from '../../../src/lib/region';
-import { accountWithPot, noBalanceColumn, offsetPages, taggedStatement } from '../../fixtures/ukPages';
+import { accountWithPot, categoryColumn, noBalanceColumn, offsetPages, taggedStatement } from '../../fixtures/ukPages';
 
 describe('more UK statement layouts', () => {
   it('ignores invisible accessibility text, reads the Type column, and skips a key that looks like a table', () => {
@@ -25,9 +25,9 @@ describe('more UK statement layouts', () => {
     expect(main!.outside).toMatchObject({ totalOut: -3_100, totalIn: 5_000 });
     expect(main!.result.parsed.checks.find((c) => c.name.startsWith('Printed totals'))?.ok).toBe(true);
     // Newest-first rows put back in order; the wrapped description stays with its own amount.
-    expect(main!.result.parsed.txns.map((t) => [t.date, t.amount, t.lines.join(' / ')])).toEqual([
-      ['2026-03-02', -2_000, 'Transfer to Pot'], ['2026-03-03', -1_000, 'SAMPLE MOBILE LIMITED / London GBR'],
-      ['2026-03-04', 5_000, 'SAMPLE FRIEND (Faster Payments) / Reference: Thanks'], ['2026-03-05', -100, 'Transfer to Pot'],
+    expect(main!.result.parsed.txns.map((t) => [t.date, t.amount, t.type, t.lines.join(' / ')])).toEqual([
+      ['2026-03-02', -2_000, 'POT', 'Savings pot / Transfer to Pot'], ['2026-03-03', -1_000, '', 'SAMPLE MOBILE LIMITED / London GBR'],
+      ['2026-03-04', 5_000, '', 'SAMPLE FRIEND (Faster Payments) / Reference: Thanks'], ['2026-03-05', -100, 'POT', 'Savings pot / Transfer to Pot'],
     ]);
     expect(pot!.account.label).toBe('Rainy Day');
     expect(pot!.result.parsed.txns).toHaveLength(2);
@@ -58,5 +58,20 @@ describe('pages that move, and statements with no balance column', () => {
     } finally {
       setRegion('uk');
     }
+  });
+});
+
+describe('payment types from a Category column and from the wording', () => {
+  it('joins a name that wrapped, keeps separate lines apart, and reads the kind of each payment', () => {
+    const [a, ...rest] = analysePdfSections(categoryColumn());
+    expect(rest).toEqual([]);
+    expect(a!.result.verified).toBe(true);
+    expect(a!.result.parsed.txns.map((t) => [t.type, t.lines])).toEqual([
+      ['CR', ['SAMPLE SERVICES LTD']],
+      ['VIS', ['SAMPLE COFFEE', 'London']],
+      ['BP', ['SAMPLE FRIEND']],
+      ['POT', ['Savings pot', 'To GBP Savings']],
+      ['POT', ['Savings pot', 'From GBP Savings']],
+    ]);
   });
 });
