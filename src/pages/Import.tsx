@@ -70,7 +70,9 @@ export function Import() {
           state: r.parsed ? 'ready' : 'needs-mapping',
         });
       } catch (e) {
-        patch(c.id, { state: 'error', error: e instanceof ImportError ? e.message : 'This file could not be read.' });
+        // Say why: a bare "could not be read" hid a browser incompatibility once.
+        const why = e instanceof Error && e.message ? ` (${e.name}: ${e.message.slice(0, 160)})` : '';
+        patch(c.id, { state: 'error', error: e instanceof ImportError ? e.message : `This file could not be read${why}. Try reloading the page; if it keeps happening, a CSV from your bank will work.` });
       }
     }
   }, [patch]);

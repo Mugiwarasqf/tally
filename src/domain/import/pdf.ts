@@ -28,10 +28,15 @@ export async function readPdf(data: Uint8Array, pdfjs: PdfJs): Promise<PdfPage[]
   return pages;
 }
 
-/** Browser entry point. pdf.js and its worker load lazily — only when a PDF is dropped. */
+/**
+ * Browser entry point. pdf.js and its worker load lazily — only when a PDF is dropped.
+ * The legacy build is used on purpose: the modern one calls very new JavaScript
+ * (Map.getOrInsertComputed, Math.sumPrecise) that iPhone Safari does not have yet,
+ * so every PDF failed there. The legacy build carries polyfills for them.
+ */
 export async function readPdfInBrowser(buf: ArrayBuffer): Promise<PdfPage[]> {
-  const pdfjs = await import('pdfjs-dist');
-  const worker = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const worker = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default;
   pdfjs.GlobalWorkerOptions.workerSrc = worker;
   return readPdf(new Uint8Array(buf), pdfjs as unknown as PdfJs);
 }

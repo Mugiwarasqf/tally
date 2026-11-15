@@ -6,7 +6,7 @@
  *  3. Background checks (installed Chrome/Edge only): on a periodic wake-up, shows alerts
  *     that Tally scheduled earlier, reading them straight from IndexedDB. No server involved.
  */
-const VERSION = 'tally-v1';
+const VERSION = 'tally-v2';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './favicon.svg', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -27,10 +27,11 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // never touch third-party requests
 
-  // Page loads: newest version when online, cached shell when not.
+  // Page loads: newest version when online, cached shell when not. `no-cache` skips the
+  // browser's HTTP cache (GitHub Pages allows 10 minutes), so an update shows on the next open.
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req)
+      fetch(req, { cache: 'no-cache' })
         .then((res) => {
           const copy = res.clone();
           caches.open(VERSION).then((c) => c.put('./index.html', copy));
