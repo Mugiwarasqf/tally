@@ -1,4 +1,5 @@
 import { db } from './db';
+import { region } from '../lib/region';
 import type { Category, Txn } from '../domain/types';
 
 /**
@@ -81,7 +82,7 @@ export async function exportCsv(): Promise<Blob> {
   const rows = (await db.txns.orderBy('date').toArray()).map((t: Txn) =>
     [t.date, t.time ?? '', esc(accts.get(t.accountId) ?? ''), esc(t.merchant), esc(cats.get(t.categoryId) ?? ''), (t.amount / 100).toFixed(2), esc(t.place ?? ''), esc(t.detail), esc(t.note ?? '')].join(','),
   );
-  return new Blob([['Date,Time,Account,Merchant,Category,Amount (GBP),Place,Detail,Note', ...rows].join('\n')], { type: 'text/csv' });
+  return new Blob([[`Date,Time,Account,Merchant,Category,Amount (${region().currency}),Place,Detail,Note`, ...rows].join('\n')], { type: 'text/csv' });
 }
 
 export function download(blob: Blob, name: string): void {

@@ -19,7 +19,8 @@ export const BANKS: Array<[key: string, name: string]> = [
   ['unitedbankforafrica', 'UBA'], ['ubagroup', 'UBA'], ['alat.ng', 'ALAT by Wema'], ['wemabank', 'Wema Bank'],
   ['fidelitybank', 'Fidelity Bank'], ['firstcitymonument', 'FCMB'], ['fcmb', 'FCMB'], ['sterlingbank', 'Sterling Bank'],
   ['unionbank', 'Union Bank'], ['stanbicibtc', 'Stanbic IBTC'], ['ecobank', 'Ecobank'], ['polarisbank', 'Polaris Bank'],
-  ['providusbank', 'Providus Bank'], ['keystonebank', 'Keystone Bank'], ['jaizbank', 'Jaiz Bank'], ['titantrust', 'Titan Trust Bank'],
+  // Globus, Lotus, Optimus and Providus must come before "usbank" below, which their names contain.
+  ['providusbank', 'Providus Bank'], ['globusbank', 'Globus Bank'], ['lotusbank', 'Lotus Bank'], ['optimusbank', 'Optimus Bank'], ['keystonebank', 'Keystone Bank'], ['jaizbank', 'Jaiz Bank'], ['titantrust', 'Titan Trust Bank'],
   ['kudabank', 'Kuda'], ['kuda.com', 'Kuda'], ['moniepoint', 'Moniepoint'], ['palmpay', 'PalmPay'], ['opay', 'OPay'],
   ['fairmoney', 'FairMoney'],
 

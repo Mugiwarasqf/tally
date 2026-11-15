@@ -48,6 +48,17 @@ Later, one GTBank and one Zenith statement (unlocked) added two more layouts:
 
 GTBank (5) and Zenith (3) are both proved by the running balance.
 
+A Globus Bank statement from its mobile app added one more:
+
+| Seen | Handled by |
+|---|---|
+| Globus: a row number ("S/n") printed before the posting date | A whole number printed right before a row's date is dropped, so the row is dated. It is kept when an amount sits between them (a US list of cheques: number, amount, date). |
+| "GLOBUS BANK" contains "US BANK" | Globus, Lotus and Optimus are named before U.S. Bank in the bank list. |
+
+Globus (233 transactions) is proved by the running balance, the closing balance and the printed totals.
+
+Statements printed and stamped at a branch, then scanned (Access and Polaris samples), have no text at all. They are turned away with the message to download the statement from the app or online banking instead, as decided in `06-pdf-statements.md` (no OCR).
+
 ## Nigerian narrations (`src/domain/categorize/narration.ts`)
 
 Only used in the Nigeria region. It turns the wording into the payment types the categoriser already knows:

@@ -130,3 +130,24 @@ export function gluedValueDate(): PdfPage[] {
     t(54, 562, '2 Debit(s) 1 Credit(s)'), m(335, 562, '50.60'), m(409, 562, '6.00'), m(542, 562, '55.40'),
   ]];
 }
+
+/**
+ * A mobile-app statement (Globus-like): a row number before the posting date, a value date, "--" in the empty
+ * amount column, and the bank's name only in the branch address.
+ */
+export function rowNumbers(): PdfPage[] {
+  const row = (y: number, n: string, date: string, desc: string, out: string | null, inn: string | null, bal: string): PdfItem[] => [
+    t(36, y, n), t(66, y, date), t(120, y, date), t(173, y, desc),
+    out ? m(410, y, out) : t(370, y, '--'), inn ? m(467, y, inn) : t(423, y, '--'), m(524, y, bal),
+  ];
+  return [[
+    t(368, 774, 'STATEMENT OF ACCOUNT'), t(363, 764, 'Generated from the Mobile App'), t(36, 669, 'Branch Address'), t(127, 669, 'GLOBUS BANK BRANCH SAMPLE'),
+    t(319, 700, 'Opening Balance'), t(419, 700, '1,000.00'),
+    t(319, 653, 'Closing Balance'), t(419, 653, '1,149.25'),
+    t(33, 560, 'S/n'), t(66, 560, 'Post Date'), t(119, 560, 'Value Date'), t(173, 560, 'Description'),
+    t(369, 560, 'Debit'), t(423, 560, 'Credit'), t(476, 560, 'Balance'),
+    ...row(538, '1', '08-10-2026', 'FT/SAMPLE PERSON/Transfer from', null, '200.00', '1,200.00'),
+    ...row(523, '2', '08-10-2026', 'FT/MB/Food/SAMPLE STORES', '50.00', null, '1,150.00'),
+    ...row(508, '3', '09-10-2026', 'charge|0000000000/FT/MB/Food/SAMPLE', '0.75', null, '1,149.25'),
+  ]];
+}

@@ -6,7 +6,7 @@ import { pairReversals } from '../../../src/domain/import/pair';
 import type { Txn } from '../../../src/domain/types';
 import { fmt, fmtCompact, parseMoney, roundTo5 } from '../../../src/lib/money';
 import { everyday, setRegion } from '../../../src/lib/region';
-import { bankStatement, gluedValueDate, tallCellStatement, walletStatement } from '../../fixtures/ngPages';
+import { bankStatement, gluedValueDate, rowNumbers, tallCellStatement, walletStatement } from '../../fixtures/ngPages';
 import { headedStatement } from '../../fixtures/genericPages';
 import { syntheticHsbc } from '../../fixtures/hsbcPages';
 
@@ -87,6 +87,16 @@ describe('Nigerian statement layouts', () => {
     expect(a.result.verified).toBe(true);
     expect(a.result.parsed.txns.map((t) => [t.date, t.amount])).toEqual([['2026-03-27', -5_000], ['2026-03-31', 600], ['2026-03-31', -60]]);
     expect(a.result.parsed.txns.map((t) => readNarration(t.lines, t.amount)?.type)).toEqual(['FEE', 'INT', 'TAX']);
+  });
+
+  it('reads rows that start with a row number, and does not mistake Globus Bank for U.S. Bank', () => {
+    const a = analysePdf(rowNumbers());
+    expect(a.result.verified).toBe(true);
+    expect(a.bank).toBe('Globus Bank');
+    expect(a.result.parsed.txns.map((t) => [t.date, t.amount, t.lines])).toEqual([
+      ['2026-10-08', 20_000, ['FT/SAMPLE PERSON/Transfer from']], ['2026-10-08', -5_000, ['FT/MB/Food/SAMPLE STORES']],
+      ['2026-10-09', -75, ['charge|0000000000/FT/MB/Food/SAMPLE']],
+    ]);
   });
 
   it('turns a statement in the wrong currency away with a reason', () => {

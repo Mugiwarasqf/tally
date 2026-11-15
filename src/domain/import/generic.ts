@@ -506,7 +506,12 @@ export function buildRows(pages: PdfPage[]): TRow[][] {
 
 function makeRow(page: number, y: number, items: PdfItem[]): TRow {
   const money = items.filter((i) => isMoney(i.str));
-  const text = joinItems(items.filter((i) => !money.includes(i)));
+  let words = items.filter((i) => !money.includes(i));
+  // A row number printed just before the date ("S/n" column: Globus) is not part of the row's text. A number
+  // followed by an amount and then a date (a US list of cheques) is left alone.
+  if (words.length > 1 && /^\d{1,5}$/.test(words[0]!.str.trim()) && items.indexOf(words[1]!) === items.indexOf(words[0]!) + 1
+    && !leadingDate(joinItems(words)) && leadingDate(joinItems(words.slice(1)))) words = words.slice(1);
+  const text = joinItems(words);
   let date = leadingDate(text);
   // "01/10/2026 - 15/11/2026" is the statement period, not a transaction.
   if (date) {
