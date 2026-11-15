@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { useApp } from '../app/data';
-import { useInstall } from '../app/pwa';
+import { installHelp, useInstall } from '../app/pwa';
 import { addRule, deleteAccount, deleteCategory, deleteRule, recategorizeAll, renameAccount, saveCategory, wipeEverything } from '../data/actions';
 import { download, exportBackup, exportCsv, restoreBackup, stamp } from '../data/backup';
 import { isDemo, setDemo } from '../data/db';
@@ -80,7 +80,7 @@ export function Settings() {
             <span className="field__label">Install</span>
             {install.canInstall
               ? <button className="btn btn--secondary" onClick={install.install}><Icon name="DownloadSimple" size={18} />Install Tally on this device</button>
-              : <span className="field__hint">Use your browser’s “Install app” or “Add to Home Screen” option to put Tally on your device.</span>}
+              : <span className="field__hint">{installHelp()}</span>}
           </div>
         )}
       </section>

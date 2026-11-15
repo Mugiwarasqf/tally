@@ -1,6 +1,6 @@
 # Tally
 
-Local-first expense tracker, budget planner and debt planner (PWA). Vite + React 19 + TypeScript 7 + Dexie (IndexedDB). UK, GBP; PDF readers for HSBC UK and Revolut. See [README.md](README.md) for features.
+Local-first expense tracker, budget planner and debt planner (PWA). Vite + React 19 + TypeScript 7 + Dexie (IndexedDB). UK, GBP; dedicated PDF readers for HSBC UK and Revolut, and a generic, balance-verified reader for any other bank (`docs/06-pdf-statements.md`). See [README.md](README.md) for features.
 
 ## Hard constraints (from the user)
 

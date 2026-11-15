@@ -16,7 +16,7 @@ export interface Check {
   detail: string;
 }
 
-export type SourceFormat = 'pdf-hsbc' | 'pdf-revolut' | 'csv' | 'ofx' | 'qif';
+export type SourceFormat = 'pdf-hsbc' | 'pdf-revolut' | 'pdf-generic' | 'csv' | 'ofx' | 'qif';
 
 /** Everything a parser learned from one statement file. */
 export interface ParsedStatement {

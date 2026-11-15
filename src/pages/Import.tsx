@@ -7,6 +7,9 @@ import { accountKey } from '../domain/import/build';
 import { ACCEPTED, readStatementFile } from '../domain/import/detect';
 import { parseCsvRows } from '../domain/import/csv';
 import type { CsvAnalysis, CsvMapping, DateOrder } from '../domain/import/csv';
+import { layoutFrom, readPdfWith, ROLE_LABEL } from '../domain/import/generic';
+import type { MoneyRole, PdfAnalysis } from '../domain/import/generic';
+import { loadPdfLayouts, savePdfLayout } from '../data/pdfLayouts';
 import { ImportError } from '../domain/import/types';
 import type { ParsedStatement } from '../domain/import/types';
 import { addDays, diffDays, fmtDay, fmtDayYear } from '../lib/dates';
@@ -23,6 +26,7 @@ interface Candidate {
   state: 'reading' | 'ready' | 'needs-mapping' | 'error' | 'duplicate' | 'done';
   parsed?: ParsedStatement;
   csv?: CsvAnalysis;
+  pdf?: PdfAnalysis;
   error?: string;
   duplicateOf?: string;
   account: string; // existing account id or 'new'
@@ -46,13 +50,14 @@ export function Import() {
   const read = useCallback(async (list: File[]) => {
     const fresh: Candidate[] = list.map((file) => ({ id: uid(), file, hash: '', state: 'reading', account: 'new', accountName: '' }));
     setItems((s) => [...s, ...fresh]);
+    const layouts = await loadPdfLayouts().catch(() => []);
     for (const c of fresh) {
       try {
         const bytes = await c.file.arrayBuffer();
         const hash = await sha256Hex(bytes);
         const dup = await db.files.where('hash').equals(hash).first();
         if (dup) { patch(c.id, { hash, state: 'duplicate', duplicateOf: dup.name }); continue; }
-        const r = await readStatementFile(c.file, bytes);
+        const r = await readStatementFile(c.file, bytes, layouts);
         const accts = await db.accounts.toArray();
         let account = 'new';
         if (r.parsed) {
@@ -60,7 +65,7 @@ export function Import() {
           account = accts.find((a) => a.key === key)?.id ?? (!r.parsed.format.startsWith('pdf') && accts.length === 1 ? accts[0]!.id : 'new');
         }
         patch(c.id, {
-          hash, parsed: r.parsed ?? undefined, csv: r.csv, account,
+          hash, parsed: r.parsed ?? undefined, csv: r.csv, pdf: r.pdf, account,
           accountName: r.parsed ? (r.parsed.account.number ? `${r.parsed.bank} ····${r.parsed.account.number.slice(-4)}` : r.parsed.account.label ?? c.file.name.replace(/\.[^.]+$/, '')) : c.file.name.replace(/\.[^.]+$/, ''),
           state: r.parsed ? 'ready' : 'needs-mapping',
         });
@@ -118,7 +123,7 @@ export function Import() {
       >
         <IconTile name="UploadSimple" tone="brand" size="lg" />
         <h2 className="t-title">Drop statements here</h2>
-        <p className="t-small">PDF (HSBC UK or Revolut), CSV, OFX or QIF. Add as many months as you like. Files are read on this device and never uploaded.</p>
+        <p className="t-small">PDF statements from any bank, or CSV, OFX and QIF files. Add as many months as you like. Files are read on this device and never uploaded.</p>
         <span className="btn btn--primary">Choose files</span>
         <input ref={input} type="file" multiple accept={ACCEPTED} onChange={(e) => { void read([...(e.target.files ?? [])]); e.target.value = ''; }} />
       </div>
@@ -234,6 +239,9 @@ function CandidateCard({ c, accounts, patch, onRemove }: { c: Candidate; account
       {c.state === 'needs-mapping' && c.csv && (
         <CsvMapper csv={c.csv} fileName={c.file.name} onParsed={(parsed) => patch(c.id, { parsed, state: 'ready' })} />
       )}
+      {c.state === 'needs-mapping' && c.pdf && (
+        <PdfMapper key={c.pdf.roles.join()} pdf={c.pdf} onParsed={(parsed, pdf) => patch(c.id, { parsed, pdf, state: 'ready', accountName: parsed.account.number ? `${parsed.bank} ····${parsed.account.number.slice(-4)}` : pdf.bank || c.accountName })} />
+      )}
 
       {c.state === 'ready' && p && (
         <>
@@ -254,6 +262,12 @@ function CandidateCard({ c, accounts, patch, onRemove }: { c: Candidate; account
             </ul>
           )}
           {p.warnings.map((w) => <Banner key={w} tone="warn">{w}</Banner>)}
+          {p.format === 'pdf-generic' && c.pdf && (
+            <p className="t-small split">
+              <span>{c.pdf.fromSaved ? 'Read with the layout you confirmed before.' : 'Columns worked out from the statement and proved by its balance.'}</span>
+              <button className="btn btn--ghost btn--sm" onClick={() => patch(c.id, { state: 'needs-mapping' })}><Icon name="Sliders" size={16} />Adjust columns</button>
+            </p>
+          )}
           <div className="form-grid form-grid--2">
             <div className="field">
               <label htmlFor={`acct-${c.id}`}>Account</label>
@@ -272,6 +286,83 @@ function CandidateCard({ c, accounts, patch, onRemove }: { c: Candidate; account
         </>
       )}
     </article>
+  );
+}
+
+/**
+ * A PDF from a bank Tally has no dedicated reader for, whose columns the balance couldn't prove.
+ * The user names each money column; the preview and the balance check update as they choose.
+ */
+function PdfMapper({ pdf, onParsed }: { pdf: PdfAnalysis; onParsed: (p: ParsedStatement, pdf: PdfAnalysis) => void }) {
+  const [roles, setRoles] = useState<MoneyRole[]>(pdf.roles);
+  const [order, setOrder] = useState<DateOrder>(pdf.dateOrder);
+  const [remember, setRemember] = useState(true);
+  const reading = useMemo(() => readPdfWith(pdf, roles, order), [pdf, roles, order]);
+  const p = reading.parsed;
+  const remembers = pdf.bank ? `Remember this layout for ${pdf.bank} statements` : 'Remember this layout for statements like this one';
+  const apply = async () => {
+    if (remember) await savePdfLayout(layoutFrom(pdf, roles, order, Date.now())).catch(() => undefined);
+    onParsed(p, { ...pdf, roles, dateOrder: order, result: reading });
+  };
+  return (
+    <>
+      <Banner tone={reading.verified ? 'good' : 'brand'} icon={reading.verified ? 'CheckCircle' : 'Sliders'}>
+        {reading.verified
+          ? <><strong>These columns add up.</strong> Every printed balance agrees with this reading.</>
+          : <><strong>Which column is which?</strong> {reading.reason} Name each money column; the preview and checks below update as you go.</>}
+      </Banner>
+      <div className="form-grid form-grid--2">
+        {pdf.columns.map((col, i) => (
+          <div className="field" key={col.edge}>
+            <label htmlFor={`pdfcol-${i}`}>{col.label ? `“${col.label}”` : `Money column ${i + 1}`}</label>
+            <select id={`pdfcol-${i}`} className="select" value={roles[i]} onChange={(e) => setRoles(roles.map((r, j) => (j === i ? (e.target.value as MoneyRole) : r)))}>
+              {(Object.keys(ROLE_LABEL) as MoneyRole[]).map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+            </select>
+            <span className="field__hint">e.g. {col.samples.join(', ') || '—'}</span>
+          </div>
+        ))}
+        <div className="field">
+          <label htmlFor="pdf-dates">Date format</label>
+          <select id="pdf-dates" className="select" value={order} onChange={(e) => setOrder(e.target.value as DateOrder)}>
+            <option value="dmy">Day / month / year</option><option value="mdy">Month / day / year</option><option value="ymd">Year-month-day</option>
+          </select>
+        </div>
+      </div>
+      {p.checks.length > 0 && (
+        <ul className="checks">
+          {p.checks.map((k) => (
+            <li key={k.name} className={k.ok ? 'is-ok' : 'is-bad'}>
+              <Icon name={k.ok ? 'CheckCircle' : 'WarningCircle'} size={18} weight="fill" />
+              <span><strong>{k.name}.</strong> {k.detail}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {p.warnings.map((w) => <Banner key={w} tone="warn">{w}</Banner>)}
+      {p.txns.length > 0 && (
+        <div className="tablewrap">
+          <table className="table">
+            <caption className="t-xs" style={{ textAlign: 'left' }}>First {Math.min(6, p.txns.length)} of {p.txns.length} transactions as read</caption>
+            <thead><tr><th>Date</th><th>Description</th><th className="r">Amount</th><th className="r">Balance</th></tr></thead>
+            <tbody>
+              {p.txns.slice(0, 6).map((t, i) => (
+                <tr key={i}>
+                  <td className="num">{fmtDay(t.date)}</td>
+                  <td>{t.lines.join(' · ')}</td>
+                  <td className="r">{fmt(t.amount, { sign: true })}</td>
+                  <td className="r">{t.balance !== undefined ? fmt(t.balance) : ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <label className="split">
+        <span className="t-small">{remembers}</span>
+        <span className="switch"><input type="checkbox" role="switch" checked={remember} onChange={(e) => setRemember(e.target.checked)} aria-label={remembers} /><span className="switch__track" /></span>
+      </label>
+      <button className="btn btn--primary" onClick={() => void apply()} disabled={!p.txns.length}>Use these columns</button>
+    </>
   );
 }
 
