@@ -5,7 +5,7 @@ import {
   GlobeHemisphereWest, GraduationCap, Heartbeat, House, Info, Lightning, LockKey, MagnifyingGlass, Money, Moon,
   PencilSimple, PiggyBank, Plus, PlusCircle, PushPin, Question, Receipt, Scissors, ShieldCheck, ShoppingBag, ShoppingCart,
   Sliders, Sparkle, Sun, Tag, Target, Trash, TrendDown, TrendUp, UploadSimple, UsersThree, Wallet, Warning,
-  WarningCircle, X, ListBullets, Table, Lightbulb, Scales, Fire, Confetti, ArrowCounterClockwise, Eye, Calendar, Rows, Trophy, Medal, Car, DeviceMobile, WifiHigh, Television, Drop, Buildings,
+  WarningCircle, X, ListBullets, Table, Lightbulb, Scales, Fire, Confetti, ArrowCounterClockwise, Eye, EyeSlash, LockKeyOpen, Calendar, Rows, Trophy, Medal, Car, DeviceMobile, WifiHigh, Television, Drop, Buildings,
 } from '@phosphor-icons/react';
 import type { Icon as PhosphorIcon, IconWeight } from '@phosphor-icons/react';
 
@@ -20,7 +20,7 @@ export const ICONS = {
   GlobeHemisphereWest, GraduationCap, Heartbeat, House, Info, Lightning, LockKey, MagnifyingGlass, Money, Moon,
   PencilSimple, PiggyBank, Plus, PlusCircle, PushPin, Question, Receipt, Scissors, ShieldCheck, ShoppingBag, ShoppingCart,
   Sliders, Sparkle, Sun, Tag, Target, Trash, TrendDown, TrendUp, UploadSimple, UsersThree, Wallet, Warning,
-  WarningCircle, X, ListBullets, Table, Lightbulb, Scales, Fire, Confetti, ArrowCounterClockwise, Eye, Calendar, Rows, Trophy, Medal, Car, DeviceMobile, WifiHigh, Television, Drop, Buildings,
+  WarningCircle, X, ListBullets, Table, Lightbulb, Scales, Fire, Confetti, ArrowCounterClockwise, Eye, EyeSlash, LockKeyOpen, Calendar, Rows, Trophy, Medal, Car, DeviceMobile, WifiHigh, Television, Drop, Buildings,
 } satisfies Record<string, PhosphorIcon>;
 
 export type IconName = keyof typeof ICONS;

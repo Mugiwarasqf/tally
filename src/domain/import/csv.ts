@@ -21,14 +21,17 @@ export interface CsvMapping {
 }
 
 export interface CsvAnalysis {
+  /** Where the rows came from: a CSV file or a spreadsheet. */
+  kind: 'csv' | 'xlsx';
   rows: string[][];
   mapping: CsvMapping;
   confident: boolean;
 }
 
 const HEADER_HINTS = {
-  date: /^(transaction )?date|posted|^when$/i,
-  description: /description|details|narrative|memo|payee|merchant|reference|^name$|particulars/i,
+  // "Trans Date", "Txn Date", "Posting Date" (Nigerian exports put the value date after it, and the first match wins).
+  date: /^(?:(?:transaction|trans\.?|txn|tran|posting|posted|booking|entry)\s*)?date\b|posted|^when$/i,
+  description: /description|details|narrative|narration|remarks?|memo|payee|merchant|reference|^name$|particulars/i,
   amount: /^(transaction )?amount|^value$|^amount \(/i,
   debit: /debit|paid out|money out|withdraw|outgoing|^out$/i,
   credit: /credit|paid in|money in|deposit|incoming|^in$/i,
@@ -69,12 +72,17 @@ export function detectDateOrder(samples: string[]): DateOrder {
 
 export function analyseCsv(text: string): CsvAnalysis {
   const parsed = Papa.parse<string[]>(text.replace(/^﻿/, ''), { skipEmptyLines: 'greedy' });
-  const rows = parsed.data.map((r) => r.map((c) => (c ?? '').trim()));
-  if (rows.length < 2) throw new ImportError('That CSV has no rows to import.');
+  return analyseRows(parsed.data.map((r) => r.map((c) => (c ?? '').trim())), 'csv');
+}
 
-  // Header = first row (of the first 15) that names at least two known columns.
+/** Column detection for any table of text rows: a CSV file, or the first sheet of a spreadsheet. */
+export function analyseRows(rows: string[][], kind: CsvAnalysis['kind']): CsvAnalysis {
+  if (rows.length < 2) throw new ImportError(`That ${kind === 'csv' ? 'CSV' : 'spreadsheet'} has no rows to import.`);
+
+  // Header = first row (of the first 40: bank exports often start with an account summary) that names at least
+  // two known columns.
   let headerRow = 0;
-  for (let i = 0; i < Math.min(15, rows.length); i++) {
+  for (let i = 0; i < Math.min(40, rows.length); i++) {
     const hits = rows[i]!.filter((c) => Object.values(HEADER_HINTS).some((re) => re.test(c))).length;
     if (hits >= 2) {
       headerRow = i;
@@ -94,10 +102,10 @@ export function analyseCsv(text: string): CsvAnalysis {
     headerRow, date, description: descCols, amount, debit, credit, balance, dateOrder: detectDateOrder(samples),
   };
   const confident = date >= 0 && descCols.length > 0 && (amount >= 0 || (debit >= 0 && credit >= 0));
-  return { rows, mapping, confident };
+  return { kind, rows, mapping, confident };
 }
 
-export function parseCsvRows(rows: string[][], m: CsvMapping, label = 'CSV import'): ParsedStatement {
+export function parseCsvRows(rows: string[][], m: CsvMapping, label = 'CSV import', kind: CsvAnalysis['kind'] = 'csv'): ParsedStatement {
   if (m.date < 0 || (m.amount < 0 && m.debit < 0 && m.credit < 0)) throw new ImportError('Choose a date column and an amount (or debit/credit) column.');
   const txns: RawTxn[] = [];
   let skipped = 0;
@@ -125,7 +133,7 @@ export function parseCsvRows(rows: string[][], m: CsvMapping, label = 'CSV impor
   if (!txns.length) throw new ImportError('No transactions could be read with that column mapping.');
   const dates = txns.map((t) => t.date).sort();
   return {
-    bank: 'CSV', format: 'csv', account: { label },
+    bank: kind === 'csv' ? 'CSV' : 'Spreadsheet', format: kind, account: { label },
     periodStart: dates[0], periodEnd: dates[dates.length - 1],
     txns, checks: [], warnings: skipped ? [`${skipped} row(s) were skipped (no date or amount).`] : [],
   };

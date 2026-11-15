@@ -194,6 +194,11 @@
 .input-wrap { position: relative; }
 .input-wrap__prefix { position: absolute; left: var(--s-4); top: 50%; transform: translateY(-50%); color: var(--ink-3); font-weight: var(--fw-semibold); pointer-events: none; }
 .input-wrap__suffix { position: absolute; right: var(--s-4); top: 50%; transform: translateY(-50%); color: var(--ink-3); font-size: var(--fs-sm); pointer-events: none; }
+/* A button inside the field (show/hide password). */
+.input-wrap { display: block; }
+.input-wrap > .input { width: 100%; }
+.input-wrap__btn { position: absolute; right: var(--s-2); top: 50%; transform: translateY(-50%); }
+.input-wrap:has(.input-wrap__btn) > .input { padding-right: 3rem; }
 .search { position: relative; flex: 1; min-width: 12rem; }
 .search svg { position: absolute; left: var(--s-4); top: 50%; transform: translateY(-50%); color: var(--ink-3); pointer-events: none; }
 .search .input { padding-left: 2.75rem; }

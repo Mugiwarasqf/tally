@@ -8,9 +8,9 @@ import { ACCEPTED, readStatementFile } from '../domain/import/detect';
 import { parseCsvRows } from '../domain/import/csv';
 import type { CsvAnalysis, CsvMapping, DateOrder } from '../domain/import/csv';
 import { layoutFrom, readPdfWith, ROLE_LABEL } from '../domain/import/generic';
-import type { MoneyRole, PdfAnalysis } from '../domain/import/generic';
+import type { MoneyRole, PdfAnalysis, PdfLayout } from '../domain/import/generic';
 import { loadPdfLayouts, savePdfLayout } from '../data/pdfLayouts';
-import { ImportError } from '../domain/import/types';
+import { ImportError, PasswordNeeded } from '../domain/import/types';
 import type { ParsedStatement } from '../domain/import/types';
 import { addDays, diffDays, fmtDay, fmtDayYear } from '../lib/dates';
 import { sha256Hex, uid } from '../lib/hash';
@@ -28,7 +28,8 @@ interface Candidate {
   id: string;
   file: File;
   hash: string;
-  state: 'reading' | 'ready' | 'needs-mapping' | 'error' | 'duplicate' | 'done' | 'wrong-currency';
+  state: 'reading' | 'ready' | 'needs-mapping' | 'needs-password' | 'error' | 'duplicate' | 'done' | 'wrong-currency';
+  wrongPassword?: boolean;
   currency?: Currency;
   /** Which account inside the PDF, when it holds several ("Savings Account"). */
   section?: string;
@@ -55,17 +56,14 @@ export function Import() {
 
   const patch = useCallback((id: string, p: Partial<Candidate>) => setItems((s) => s.map((c) => (c.id === id ? { ...c, ...p } : c))), []);
 
-  const read = useCallback(async (list: File[]) => {
-    const fresh: Candidate[] = list.map((file) => ({ id: uid(), file, hash: '', state: 'reading', account: 'new', accountName: '' }));
-    setItems((s) => [...s, ...fresh]);
-    const layouts = await loadPdfLayouts().catch(() => []);
-    for (const c of fresh) {
+  /** Read one file into its card. A locked PDF stops at 'needs-password'; `password` is used once and not kept. */
+  const readOne = useCallback(async (c: Candidate, layouts: PdfLayout[], password?: string) => {
       try {
         const bytes = await c.file.arrayBuffer();
         const hash = await sha256Hex(bytes);
         const dup = await db.files.where('hash').equals(hash).first();
-        if (dup) { patch(c.id, { hash, state: 'duplicate', duplicateOf: dup.name }); continue; }
-        const r = await readStatementFile(c.file, bytes, layouts);
+        if (dup) { patch(c.id, { hash, state: 'duplicate', duplicateOf: dup.name }); return; }
+        const r = await readStatementFile(c.file, bytes, layouts, password);
         const accts = await db.accounts.toArray();
         const fields = (x: FileRead): Partial<Candidate> => {
           let account = 'new';
@@ -87,12 +85,24 @@ export function Import() {
         const extra: Candidate[] = (r.more ?? []).map((x, k) => ({ id: uid(), file: c.file, hash: `${hash}#${k + 2}`, account: 'new', accountName: '', state: 'reading', ...fields(x) }) as Candidate);
         if (extra.length) setItems((s) => s.flatMap((x) => (x.id === c.id ? [x, ...extra] : [x])));
       } catch (e) {
+        if (e instanceof PasswordNeeded) { patch(c.id, { state: 'needs-password', wrongPassword: e.wrong }); return; }
         // Say why: a bare "could not be read" hid a browser incompatibility once.
         const why = e instanceof Error && e.message ? ` (${e.name}: ${e.message.slice(0, 160)})` : '';
         patch(c.id, { state: 'error', error: e instanceof ImportError ? e.message : `This file could not be read${why}. Try reloading the page; if it keeps happening, a CSV from your bank will work.` });
       }
-    }
   }, [patch]);
+
+  const read = useCallback(async (list: File[]) => {
+    const fresh: Candidate[] = list.map((file) => ({ id: uid(), file, hash: '', state: 'reading', account: 'new', accountName: '' }));
+    setItems((s) => [...s, ...fresh]);
+    const layouts = await loadPdfLayouts().catch(() => []);
+    for (const c of fresh) await readOne(c, layouts);
+  }, [readOne]);
+
+  const unlock = useCallback(async (c: Candidate, password: string) => {
+    patch(c.id, { state: 'reading', wrongPassword: false });
+    await readOne(c, await loadPdfLayouts().catch(() => []), password);
+  }, [patch, readOne]);
 
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
@@ -142,7 +152,7 @@ export function Import() {
       >
         <IconTile name="UploadSimple" tone="brand" size="lg" />
         <h2 className="t-title">Drop statements here</h2>
-        <p className="t-small">PDF statements from any bank, or CSV, OFX and QIF files. Add as many months as you like. Files are read on this device and never uploaded.</p>
+        <p className="t-small">PDF statements from any bank, Excel (.xlsx) downloads, or CSV, OFX and QIF files. Add as many months as you like. Files are read on this device and never uploaded.</p>
         <span className="btn btn--primary">Choose files</span>
         <input ref={input} type="file" multiple accept={ACCEPTED} onChange={(e) => { void read([...(e.target.files ?? [])]); e.target.value = ''; }} />
       </div>
@@ -150,7 +160,7 @@ export function Import() {
       {items.length > 0 && (
         <section className="stack">
           {items.map((c) => (
-            <CandidateCard key={c.id} c={c} accounts={accounts} patch={patch} onRemove={() => setItems((s) => s.filter((x) => x.id !== c.id))} />
+            <CandidateCard key={c.id} c={c} accounts={accounts} patch={patch} onUnlock={(pw) => void unlock(c, pw)} onRemove={() => setItems((s) => s.filter((x) => x.id !== c.id))} />
           ))}
           {ready.length > 0 && (
             <div className="sticky-action">
@@ -206,7 +216,7 @@ export function Import() {
           <div className="list">
             {[...files].sort((a, b) => (b.periodEnd ?? '').localeCompare(a.periodEnd ?? '')).map((f) => (
               <div key={f.id} className="row">
-                <IconTile name={f.format.startsWith('pdf') ? 'FilePdf' : f.format === 'csv' ? 'FileCsv' : 'FileIcon'} tone="ink" />
+                <IconTile name={f.format.startsWith('pdf') ? 'FilePdf' : f.format === 'csv' ? 'FileCsv' : f.format === 'xlsx' ? 'Table' : 'FileIcon'} tone="ink" />
                 <span className="row__main">
                   <span className="row__title">{f.name}</span>
                   <span className="row__sub">{f.periodStart ? `${fmtDayYear(f.periodStart)} – ${f.periodEnd ? fmtDayYear(f.periodEnd) : ''}` : 'No period'} · {f.addedCount} added{f.txnCount !== f.addedCount ? ` of ${f.txnCount}` : ''}</span>
@@ -234,9 +244,9 @@ export function Import() {
   );
 }
 
-function CandidateCard({ c, accounts, patch, onRemove }: { c: Candidate; accounts: Array<{ id: string; name: string }>; patch: (id: string, p: Partial<Candidate>) => void; onRemove: () => void }) {
+function CandidateCard({ c, accounts, patch, onRemove, onUnlock }: { c: Candidate; accounts: Array<{ id: string; name: string }>; patch: (id: string, p: Partial<Candidate>) => void; onRemove: () => void; onUnlock: (password: string) => void }) {
   const p = c.parsed;
-  const icon = /\.pdf$/i.test(c.file.name) ? 'FilePdf' : /\.csv$/i.test(c.file.name) ? 'FileCsv' : 'FileIcon';
+  const icon = /\.pdf$/i.test(c.file.name) ? 'FilePdf' : /\.csv$/i.test(c.file.name) ? 'FileCsv' : /\.xlsx?$/i.test(c.file.name) ? 'Table' : 'FileIcon';
   return (
     <article className="card cand">
       <div className="split" style={{ alignItems: 'flex-start' }}>
@@ -254,6 +264,7 @@ function CandidateCard({ c, accounts, patch, onRemove }: { c: Candidate; account
       {c.state === 'duplicate' && <Banner tone="warn" icon="Info">Already imported as <strong>{c.duplicateOf}</strong>. Nothing to do.</Banner>}
       {c.state === 'error' && <Banner tone="critical" icon="WarningCircle">{c.error}</Banner>}
       {c.state === 'wrong-currency' && c.currency && <CurrencyBanner currency={c.currency} />}
+      {c.state === 'needs-password' && <PasswordForm id={c.id} wrong={!!c.wrongPassword} onUnlock={onUnlock} />}
       {c.state === 'done' && <Banner tone="good" icon="CheckCircle">Added <strong>{c.result!.added}</strong>{c.result!.skipped ? `, skipped ${c.result!.skipped} you already had` : ''}.</Banner>}
 
       {c.state === 'needs-mapping' && c.csv && (
@@ -306,6 +317,32 @@ function CandidateCard({ c, accounts, patch, onRemove }: { c: Candidate; account
         </>
       )}
     </article>
+  );
+}
+
+/**
+ * A locked PDF. Many banks email statements protected with a password (often given in the same email). It opens
+ * the file on this device for this one read: it is never saved, logged or sent anywhere.
+ */
+function PasswordForm({ id, wrong, onUnlock }: { id: string; wrong: boolean; onUnlock: (password: string) => void }) {
+  const [pw, setPw] = useState('');
+  const [show, setShow] = useState(false);
+  return (
+    <form className="stack" onSubmit={(e) => { e.preventDefault(); if (pw) onUnlock(pw); }}>
+      <Banner tone={wrong ? 'critical' : 'brand'} icon={wrong ? 'WarningCircle' : 'LockKey'}>
+        {wrong
+          ? <><strong>That password didn’t open it.</strong> Check the email the statement came with; passwords are case-sensitive.</>
+          : <><strong>This statement is locked.</strong> Enter the password your bank sent with it. It is used once, on this device, and never saved.</>}
+      </Banner>
+      <div className="field">
+        <label htmlFor={`pw-${id}`}>Statement password</label>
+        <span className="input-wrap">
+          <input id={`pw-${id}`} className="input" type={show ? 'text' : 'password'} autoComplete="off" autoCapitalize="off" spellCheck={false} value={pw} onChange={(e) => setPw(e.target.value)} />
+          <button type="button" className="icon-btn input-wrap__btn" onClick={() => setShow(!show)} aria-label={show ? 'Hide password' : 'Show password'}><Icon name={show ? 'EyeSlash' : 'Eye'} size={18} /></button>
+        </span>
+      </div>
+      <button className="btn btn--primary" type="submit" disabled={!pw}><Icon name="LockKeyOpen" size={18} />Unlock and read</button>
+    </form>
   );
 }
 
@@ -416,7 +453,7 @@ function CsvMapper({ csv, fileName, onParsed }: { csv: CsvAnalysis; fileName: st
   );
   const num = (v: string) => Number(v);
   const apply = () => {
-    try { onParsed(parseCsvRows(csv.rows, m, fileName.replace(/\.[^.]+$/, ''))); setErr(null); }
+    try { onParsed(parseCsvRows(csv.rows, m, fileName.replace(/\.[^.]+$/, ''), csv.kind)); setErr(null); }
     catch (e) { setErr(e instanceof ImportError ? e.message : 'Could not read the file with that mapping.'); }
   };
   return (

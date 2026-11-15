@@ -18,7 +18,7 @@ export interface Check {
   detail: string;
 }
 
-export type SourceFormat = 'pdf-hsbc' | 'pdf-revolut' | 'pdf-generic' | 'csv' | 'ofx' | 'qif';
+export type SourceFormat = 'pdf-hsbc' | 'pdf-revolut' | 'pdf-generic' | 'csv' | 'xlsx' | 'ofx' | 'qif';
 
 /** Everything a parser learned from one statement file. */
 export interface ParsedStatement {
@@ -47,3 +47,10 @@ export interface PdfItem {
 export type PdfPage = PdfItem[];
 
 export class ImportError extends Error {}
+
+/** The PDF is locked. `wrong` is true when a password was given and didn't open it. */
+export class PasswordNeeded extends ImportError {
+  constructor(readonly wrong: boolean) {
+    super(wrong ? 'That password did not open this statement.' : 'This statement is protected with a password.');
+  }
+}

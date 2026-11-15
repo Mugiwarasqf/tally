@@ -11,6 +11,8 @@ samples/
 *.qif
 *.csv
 !tests/fixtures/*.csv
+# Invented, password-locked test statement (see tests/domain/import/sheets.test.ts).
+!tests/fixtures/locked.pdf
 
 # Environment / secrets
 .env

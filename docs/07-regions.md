@@ -51,8 +51,16 @@ Only used in the Nigeria region. It turns the wording into the payment types the
 - **POS agents** ("Transfer to POS Transfer - NAME"): cash or a shop? Always asked once.
 - **Reversals**: the money that came back takes the category of the payment it reverses, so the two cancel out.
 
+## Locked PDFs and Excel statements
+
+- **Password-protected PDFs** (GTBank and Zenith email them locked). pdf.js opens them itself when given the password, so no new code reads the encryption. The Import card asks for the password, says plainly when it is wrong, and passes it to pdf.js for that one read. It is never saved, logged or sent. Tested with an invented locked fixture (`tests/fixtures/locked.pdf`, password `open-sesame`).
+- **Excel** (`src/domain/import/sheet.ts`, no library). Banks' "Excel" downloads come in three shapes, and each becomes rows of text that go through the same column detection as CSV:
+  - `.xlsx`: a zip of XML, unzipped with the browser's own `DecompressionStream`. Shared strings, inline strings and date-formatted cells (turned back from Excel day numbers) are handled, and float noise such as `8495.470000000001` is rounded to pence.
+  - `.xls` that is really an HTML table, or an XML Spreadsheet 2003 file: read as text.
+  - Genuine old binary `.xls`: the user is asked to save it as `.xlsx` or CSV. A BIFF parser would add a large dependency for a format banks have mostly dropped.
+- CSV and Excel header detection now looks through the first 40 rows (exports often start with an account summary) and knows "Trans Date", "Narration" and "Remarks". A spreadsheet's currency is detected from its text, like a PDF's.
+
 ## Limits
 
-- Password-protected PDFs (GTBank, Zenith) are not read yet. Planned: ask for the password on the device and pass it to pdf.js.
-- Excel statements are not read yet.
+- The GTBank and Zenith formats themselves are untested until a real, unlocked one is tried. The generic reader should handle them, as it did ALAT and OPay.
 - One currency per device; a dollar account held by a Nigerian user is not supported.
