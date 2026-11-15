@@ -6,7 +6,7 @@ import { pairReversals } from '../../../src/domain/import/pair';
 import type { Txn } from '../../../src/domain/types';
 import { fmt, fmtCompact, parseMoney, roundTo5 } from '../../../src/lib/money';
 import { everyday, setRegion } from '../../../src/lib/region';
-import { bankStatement, walletStatement } from '../../fixtures/ngPages';
+import { bankStatement, gluedValueDate, tallCellStatement, walletStatement } from '../../fixtures/ngPages';
 import { headedStatement } from '../../fixtures/genericPages';
 import { syntheticHsbc } from '../../fixtures/hsbcPages';
 
@@ -66,6 +66,27 @@ describe('Nigerian statement layouts', () => {
     expect(p.opening).toBe(1_000_000);
     expect(p.warnings.join(' ')).toMatch(/prints an opening balance of ₦8,000\.00/);
     expect(p.txns[0]).toMatchObject({ ref: 'S1000001', lines: ['POS Buy on 03-03-2026@Psk*AB1-Spotify'] });
+  });
+
+  it('reads tall cells whose remarks sit right of the balance, around amounts centred in the cell', () => {
+    const [a, ...rest] = analysePdfSections(tallCellStatement());
+    expect(rest).toEqual([]);
+    expect(a!.result.verified).toBe(true);
+    expect(a!.result.parsed.txns.map((t) => [t.amount, t.lines.length, t.lines[0]])).toEqual([
+      [50_000, 4, 'TRANSFER BETWEEN CUSTOMERS VIA GAPS'], [-2_400, 2, 'VALUE ADDED TAX SMS ALERT CHARGE FOR'],
+      [-180, 1, 'VALUE ADDED TAX VAT CHARGES'], [-50, 2, 'WITHHOLDING TAX 0123456789:WTax.Pd:01-03-2026to'],
+      [500, 2, 'INTEREST CAPITALISED 0123456789:Int.Pd:01-03-2026'],
+    ]);
+    expect(a!.result.parsed.txns.map((t) => readNarration(t.lines, t.amount)?.lines[0])).toEqual([
+      'Dividend', 'SMS alert charges', 'VAT on bank charge', 'Withholding tax on interest', 'Interest',
+    ]);
+  });
+
+  it('splits an amount printed together with the value date beside it', () => {
+    const a = analysePdf(gluedValueDate());
+    expect(a.result.verified).toBe(true);
+    expect(a.result.parsed.txns.map((t) => [t.date, t.amount])).toEqual([['2026-03-27', -5_000], ['2026-03-31', 600], ['2026-03-31', -60]]);
+    expect(a.result.parsed.txns.map((t) => readNarration(t.lines, t.amount)?.type)).toEqual(['FEE', 'INT', 'TAX']);
   });
 
   it('turns a statement in the wrong currency away with a reason', () => {

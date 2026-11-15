@@ -39,12 +39,21 @@ From one ALAT (Wema) and one OPay statement, read on the maintainer's machine on
 
 Result on those statements: ALAT 55 transactions, OPay 237 (wallet) + 130 (savings), every one proved by the running balance, the closing balance and the printed totals and counts.
 
+Later, one GTBank and one Zenith statement (unlocked) added two more layouts:
+
+| Seen | Handled by |
+|---|---|
+| GTBank: the Remarks column sits right of Balance and Originating Branch, wraps over up to four lines, and the dates and amounts are centred in the cell, half a line from the remark lines | Block cuts now also try gentler gap jumps (1.4× and up), but only when at least half the rows are tall cells, and prefer the cut that leaves the fewest text lines without an amount. A one-line-per-row table (Halifax) is unaffected. |
+| Zenith: a credit amount and its value date come out of the PDF as one piece of text ("6.18 01/10/2026") | An amount and a date in one item are split back into two cells. |
+
+GTBank (5) and Zenith (3) are both proved by the running balance.
+
 ## Nigerian narrations (`src/domain/categorize/narration.ts`)
 
 Only used in the Nigeria region. It turns the wording into the payment types the categoriser already knows:
 
 - **Charges**: COMM, VAT, stamp duty, EMTL, SMS alerts, card and account maintenance → *Fees & charges*, each a clearly named merchant. A charge is linked to the payment it was taken on (same bank reference, or a same-day payment whose description it repeats), shown as "On …" in its details.
-- **Interest** (`Int.Pd`, "Interest Earned") → *Interest*; **withholding tax** (`WTax.Pd`) → *Fees & charges*.
+- **Interest** (`Int.Pd`, "Interest Earned", "Capitalized interest") and registrar **dividends** (`DIV PYT`) → *Interest*; **withholding tax** (`WTax.Pd`, also Zenith's spelling "WITHOLDING") → *Fees & charges*. GTBank's "VALUE ADDED TAX SMS ALERT CHARGE" is the SMS charge; "VALUE ADDED TAX VAT CHARGES" is the VAT on it.
 - **Transfers** (`NIP TRANSFER TO X FROM Y`, `NIP:NAME-note`, `Transfer to NAME | Bank | account`): the other person's name becomes the payee, so your own accounts are recognised and payments to people go to the review queue once.
 - **Savings pots** (OWealth, CashBox, auto-save) → own-account transfers.
 - **Airtime, data, betting, electricity** bill payments are named by network or provider.
@@ -62,5 +71,5 @@ Only used in the Nigeria region. It turns the wording into the payment types the
 
 ## Limits
 
-- The GTBank and Zenith formats themselves are untested until a real, unlocked one is tried. The generic reader should handle them, as it did ALAT and OPay.
+- GTBank and Zenith were checked on one short statement each (few transactions, mostly charges and interest). Transfers and card payments in those layouts are read by the general rules but not yet seen in a real file.
 - One currency per device; a dollar account held by a Nigerian user is not supported.

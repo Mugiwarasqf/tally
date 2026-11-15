@@ -155,6 +155,25 @@ function mergeTouching(items: PdfItem[]): PdfItem[] {
   return out;
 }
 
+/**
+ * An amount and the date in the next cell printed as one piece of text ("6.18 01/10/2026", Zenith's credit
+ * column running into its value date). Split it back into two cells, placing each by its share of the width.
+ */
+function splitGlued(items: PdfItem[]): PdfItem[] {
+  return items.flatMap((it) => {
+    const m = /^(\S+)(\s+)(\S+)$/.exec(it.str.trim());
+    if (!m) return [it];
+    const [, a, gap, b] = m as unknown as [string, string, string, string];
+    const isDate = (s: string) => leadingDate(s) === s;
+    if (!((isMoney(a) && isDate(b)) || (isDate(a) && isMoney(b)))) return [it];
+    const cw = it.w / it.str.trim().length;
+    return [
+      { ...it, str: a, w: a.length * cw },
+      { ...it, str: b, x: it.x + (a.length + gap.length) * cw, w: b.length * cw },
+    ];
+  });
+}
+
 const pos = (it: PdfItem, a: Anchor) => (a === 'right' ? it.x + it.w : a === 'left' ? it.x : it.x + it.w / 2);
 
 /** Which currency the statement is written in, from the signs and codes it prints. */
@@ -417,7 +436,7 @@ export function buildRows(pages: PdfPage[]): TRow[][] {
     // narrower, unless the page has hardly any widths at all (then the widths can't be trusted).
     const visible = page.filter((i) => i.w / Math.max(1, i.str.length) > 0.5);
     const items = visible.length >= Math.min(10, page.length / 2) ? visible : page;
-    return groupRows(items).map((r: Row) => makeRow(pi, r.y, mergeTouching(r.items).filter((i) => !isBlank(i.str))));
+    return groupRows(items).map((r: Row) => makeRow(pi, r.y, splitGlued(mergeTouching(r.items)).filter((i) => !isBlank(i.str))));
   });
   // Dates split over two lines ("03-Aug-" above "2026"): give the date its year and drop the year line's copy.
   for (const pr of rows) {
@@ -844,11 +863,15 @@ function findBlocks(lines: Line[]): Line[] | null {
   const freq = new Map<number, number>();
   for (const g of gaps) if (g > 0) freq.set(g, (freq.get(g) ?? 0) + 1);
   const uniq = [...freq.entries()].filter(([, n]) => n >= Math.max(1, Math.ceil(gaps.length * 0.03))).map(([g]) => g).sort((a, b) => a - b);
-  // A cut that leaves dates on their own (Wise prints the date line under the amounts) is kept only as a fallback
-  // while a wider cut is tried.
-  let fallback: Line[] | null = null;
+  // Every clear jump in gap size is a candidate cut. A cut that leaves dates on their own (Wise prints the date line
+  // under the amounts) only wins if nothing else works; then the cut that leaves the fewest text lines without an
+  // amount wins (GTBank centres the amount in a tall cell, so half-line gaps inside a cell look like a jump too).
+  let best: { merged: Line[]; stranded: boolean; orphans: number } | null = null;
+  const better = (c: { stranded: boolean; orphans: number }) =>
+    !best || (c.stranded !== best.stranded ? !c.stranded : c.orphans < best.orphans);
   for (let k = 1; k < uniq.length; k++) {
-    if (uniq[k]! / uniq[k - 1]! < 1.8) continue;
+    const ratio = uniq[k]! / uniq[k - 1]!;
+    if (ratio < 1.4) continue;
     const cut = (uniq[k]! + uniq[k - 1]!) / 2;
     const groups: Line[][] = [];
     lines.forEach((l, i) => {
@@ -863,11 +886,14 @@ function findBlocks(lines: Line[]): Line[] | null {
       if (!a.some((l) => l.money.length) && b[0]!.page === a[0]!.page + 1 && b.some((l) => l.money.length)) { groups[g + 1] = [...a, ...b]; groups[g] = []; }
     }
     const withMoney = groups.filter((g) => g.some((l) => l.money.length));
-    if (groups.some((g) => g.filter((l) => l.money.length).length > 1)) return fallback;
+    if (groups.some((g) => g.filter((l) => l.money.length).length > 1)) break;
     // Too few multi-row blocks at this cut: the gap was noise between rows; try the next jump. Some statements wrap
     // only the odd long description (Monzo), so a few clear blocks are enough; no block ever holds two amounts.
     const multi = withMoney.filter((g) => g.length > 1).length;
     if (!withMoney.length || !(multi >= Math.max(2, withMoney.length * 0.05) || (multi && multi >= withMoney.length * 0.3))) continue;
+    // A gentler jump (under 1.8×) only counts when most rows are tall cells, as in GTBank; otherwise it is the odd
+    // wrapped line or footer spacing in a one-line-per-row table (Halifax).
+    if (ratio < 1.8 && multi < withMoney.length * 0.5) continue;
     const merged = withMoney.map((g) => {
       const main = g.find((l) => l.money.length)!;
       const merged: Line = {
@@ -885,11 +911,11 @@ function findBlocks(lines: Line[]): Line[] | null {
       if (type) merged.type = type;
       return merged;
     });
-    const strandedDates = groups.some((g) => !g.some((l) => l.money.length) && g.some((l) => l.dateText));
-    if (!strandedDates) return merged;
-    fallback ??= merged;
+    const stranded = groups.some((g) => !g.some((l) => l.money.length) && g.some((l) => l.dateText));
+    const orphans = groups.filter((g) => g.length && !g.some((l) => l.money.length)).length;
+    if (better({ stranded, orphans })) best = { merged, stranded, orphans };
   }
-  return fallback;
+  return best?.merged ?? null;
 }
 
 function validRoles(r: MoneyRole[]): boolean {

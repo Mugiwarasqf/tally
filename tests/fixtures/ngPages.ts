@@ -83,3 +83,50 @@ export function bankStatement(): PdfPage[] {
     t(13, 120, 'alat.ng | wemabank.com'),
   ]];
 }
+
+/**
+ * Tall cells: the remarks column sits right of the balance and wraps over several lines, and each row's dates and
+ * amounts are centred vertically in the cell, half a line from the remark lines around them. The opening balance is
+ * in a label/value box above the table.
+ */
+export function tallCellStatement(): PdfPage[] {
+  const cell = (mid: number, dates: string, ref: string, out: string | null, inn: string | null, bal: string, remarks: string[]): PdfItem[] => {
+    const top = mid + ((remarks.length - 1) * 9) / 2;
+    return [
+      t(10, mid, dates), t(82, mid, dates), t(154, mid, ref),
+      ...(out ? [m(300, mid, out)] : []), ...(inn ? [m(390, mid, inn)] : []), m(486, mid, bal), t(513, mid, 'SAMPLE BRANCH'),
+      ...remarks.map((r, i) => t(621, top - i * 9, r)),
+    ];
+  };
+  return [[
+    t(27, 565, 'Statement Period'), t(126, 565, '01-Mar-2026-31-Mar-2026'),
+    t(27, 465, 'Currency'), t(126, 465, 'NIGERIAN NAIRA'),
+    t(27, 446, 'Opening Balance'), t(126, 446, '1,000.00'),
+    t(23, 409, 'Trans. Date'), t(96, 409, 'Value Date'), t(178, 409, 'Reference'), t(275, 409, 'Debits'), t(363, 409, 'Credits'),
+    t(452, 409, 'Balance'), t(532, 409, 'Originating Branch'), t(711, 409, 'Remarks'),
+    ...cell(381, '02-Mar-2026', "'111GAP", null, '500.00', '1,500.00', [
+      'TRANSFER BETWEEN CUSTOMERS VIA GAPS', 'SAMPLE-DIV-1 FROM', 'SAMPLE REGISTRARS D IV PYT NO 1 TO', 'ADA EXAMPLE GAPS123',
+    ]),
+    ...cell(344, '30-Mar-2026', "'BR", '24.00', null, '1,476.00', ['VALUE ADDED TAX SMS ALERT CHARGE FOR', '01-FEB-26 TO 28-FEB-26']),
+    ...cell(320, '30-Mar-2026', "'BR", '1.80', null, '1,474.20', ['VALUE ADDED TAX VAT CHARGES']),
+    ...cell(301.5, '31-Mar-2026', "'", '0.50', null, '1,473.70', ['WITHHOLDING TAX 0123456789:WTax.Pd:01-03-2026to', '31-03-2026 Interest run']),
+    ...cell(278.5, '31-Mar-2026', "'", null, '5.00', '1,478.70', ['INTEREST CAPITALISED 0123456789:Int.Pd:01-03-2026', 'to 31-03-2026 Interest run']),
+  ]];
+}
+
+/** A credit amount and its value date printed as one piece of text ("6.18 01/04/2026"). */
+export function gluedValueDate(): PdfPage[] {
+  const row = (y: number, date: string, desc: string, out: string | null, inn: string | null, vd: string, bal: string): PdfItem[] => [
+    t(54, y, date), t(113, y, desc), ...(out ? [m(335, y, out)] : []),
+    ...(inn ? [{ str: `${inn} ${vd}`, x: 409 - inn.length * 4, y, w: inn.length * 4 + 4 + vd.length * 4 }] : [t(413, y, vd)]), m(542, y, bal),
+  ];
+  return [[
+    t(53, 667, 'ACCOUNT NAME: ADA EXAMPLE'), t(250, 648, 'CURRENCY: NGN'),
+    t(54, 617, 'DATE'), t(113, 617, 'DESCRIPTION'), t(265, 617, 'DEBIT'), t(339, 617, 'CREDIT'), t(413, 617, 'VALUE DATE'), t(472, 617, 'BALANCE'),
+    t(113, 606, 'Opening Balance'), m(542, 606, '100.00'),
+    ...row(595, '27/03/2026', '2026 Qtr 1 MASTER Card Maintenance Fee', '50.00', null, '27/03/2026', '50.00'),
+    ...row(584, '31/03/2026', 'CAPITALIZED INTEREST CREDIT', null, '6.00', '01/04/2026', '56.00'),
+    ...row(573, '31/03/2026', 'STATE WITHOLDING TAX', '0.60', null, '01/04/2026', '55.40'),
+    t(54, 562, '2 Debit(s) 1 Credit(s)'), m(335, 562, '50.60'), m(409, 562, '6.00'), m(542, 562, '55.40'),
+  ]];
+}

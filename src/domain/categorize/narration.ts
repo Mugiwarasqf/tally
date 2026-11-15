@@ -15,7 +15,8 @@ const NETWORKS: Array<[RegExp, string]> = [[/\bMTN\b/, 'MTN'], [/\bAIRTEL\b/, 'A
 
 /** Bank charges, in the order they are checked. Each becomes its own clearly named, learnable merchant. */
 const CHARGES: Array<[RegExp, string]> = [
-  [/^VAT\b|\bVAT ON\b|\bVAT\s*-|^V\.?A\.?T\b/, 'VAT on bank charge'],
+  // "VALUE ADDED TAX SMS ALERT CHARGE" is the SMS charge itself (GTBank prefixes it); "VALUE ADDED TAX VAT CHARGES" is the VAT.
+  [/^VAT\b|\bVAT ON\b|\bVAT\s*-|^V\.?A\.?T\b|\bVAT CHARGES?\b/, 'VAT on bank charge'],
   [/^COMM\b|\bCOMMISSION\b|\bNIP CHARGE|\bTRANSFER FEE\b|\bTRANSFER CHARGE|\bNIBSS (?:FEE|CHARGE)/, 'Transfer charge'],
   [/STAMP DUTY/, 'Stamp duty'],
   [/ELECTRONIC MONEY TRANSFER LEVY|\bEMTL\b|\bTRANSFER LEVY/, 'Transfer levy (EMTL)'],
@@ -35,8 +36,10 @@ export function readNarration(rawLines: string[], amount: number): Narration | n
   if (!H) return null;
 
   // Interest and the tax withheld from it.
-  if (/\bW\.?TAX\b|WITHHOLDING TAX|\bW\/TAX\b|\bWHT\b/.test(H)) return { type: 'TAX', lines: ['Withholding tax on interest', text] };
-  if (!out && (/\bINT\.?\s?PD\b|INTEREST (?:EARNED|PAID|CREDIT|PAYMENT)|CREDIT INTEREST|OWEALTH INTEREST/.test(H))) return { type: 'INT', lines: ['Interest', text] };
+  if (/\bW\.?TAX\b|WITHH?OLDING TAX|\bW\/TAX\b|\bWHT\b/.test(H)) return { type: 'TAX', lines: ['Withholding tax on interest', text] };
+  if (!out && (/\bINT\.?\s?PD\b|INTEREST (?:EARNED|PAID|CREDIT|PAYMENT|CAPITALI[SZ]ED)|CAPITALI[SZ]ED INTEREST|CREDIT INTEREST|OWEALTH INTEREST/.test(H))) return { type: 'INT', lines: ['Interest', text] };
+  // Share dividends paid by a registrar: "...-DIV-9 FROM <REGISTRAR> ... D IV PYT NO 65".
+  if (!out && /\bDIVIDEND\b|-DIV-|\bD ?IV PYT\b|\bDIV(?:IDEND)? (?:PAYMENT|PYT)\b/.test(H)) return { type: 'INT', lines: ['Dividend', text] };
 
   // Bank charges (money out only: a credit mentioning VAT is not a charge).
   if (out) for (const [re, label] of CHARGES) if (re.test(H)) return { type: 'FEE', lines: [label, text] };
