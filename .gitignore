@@ -22,3 +22,6 @@ samples/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Private working notes (conversation summaries, plans)
+notes/

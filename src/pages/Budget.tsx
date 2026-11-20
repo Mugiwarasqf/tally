@@ -90,9 +90,9 @@ export function Budget() {
           <hr className="divider" />
           <dl className="sum">
             <div><dt>Income</dt><dd>{fmt(cycle.expectedIncome)}</dd></div>
-            <div><dt>Savings</dt><dd>−{fmt(cycle.savingsGoal)}</dd></div>
-            <div><dt>Debt repayments</dt><dd>−{fmt(cycle.debtPlanned)}</dd></div>
-            <div><dt>Other budgets</dt><dd>−{fmt(cycle.budgetTotal - cycle.debtPlanned)}</dd></div>
+            <div><dt>Savings</dt><dd>{less(cycle.savingsGoal)}</dd></div>
+            <div><dt>Debt repayments</dt><dd>{less(cycle.debtPlanned)}</dd></div>
+            <div><dt>Other budgets</dt><dd>{less(cycle.budgetTotal - cycle.debtPlanned)}</dd></div>
           </dl>
           <div className={`assign ${over ? 'assign--over' : ''}`}>
             <span className="t-eyebrow">{over ? 'Over-assigned by' : 'Left to assign'}</span>
@@ -108,6 +108,12 @@ export function Budget() {
 
         {/* ----------------------------------------------------------- lines */}
         <div className="span-7 stack stack--lg">
+          {mine.length === 0 && suggestion.size > 0 && (
+            <Banner tone="brand" icon="Target" action={<button className="btn btn--primary btn--sm" onClick={fill}><Icon name="Sparkle" size={16} />Use my usual spending</button>}>
+              <strong>No budgets set for {label} yet.</strong> The faded amounts below are suggestions from your usual spending. Fill them in as they are, or use “Build my savings budget” to apply the cuts first.
+            </Banner>
+          )}
+
           {debtLine && (
             <section className="card">
               <div className="row" style={{ cursor: 'default' }}>
@@ -182,10 +188,13 @@ function BudgetRow({ l, month, tracking, suggestion }: { l: LineView; month: str
         )}
         {l.typical > 0 && <span className="t-xs">Usually {fmt(l.typical, { whole: true })} a month{suggestion && suggestion !== l.budget ? ` · suggest ${fmt(suggestion, { whole: true })}` : ''}</span>}
       </div>
-      <div className="brow__input"><MoneyInput value={l.budget} onChange={(v) => setBudget(month, cat.id, v)} placeholder="0" /></div>
+      <div className="brow__input"><MoneyInput value={l.budget} onChange={(v) => setBudget(month, cat.id, v)} placeholder={!l.budget && suggestion ? (suggestion / 100).toFixed(0) : '0'} /></div>
     </div>
   );
 }
+
+/** An amount taken off, written "−£350.00", but plain "£0.00" when there is nothing to take off. */
+const less = (n: number) => (n > 0 ? `−${fmt(n)}` : fmt(0));
 
 const ordinal = (n: number) => `${n}${[, 'st', 'nd', 'rd'][n % 10 > 3 || [11, 12, 13].includes(n) ? 0 : n % 10] ?? 'th'}`;
 const RHYTHM = { weekly: 'Every week', fortnightly: 'Every two weeks', monthly: 'Every month' } as const;

@@ -14,8 +14,9 @@
 @media (min-width: 48rem) { .card { padding: var(--s-6); } }
 .card--flush { padding: 0; gap: 0; overflow: hidden; }
 .card--quiet { box-shadow: none; background: transparent; border: 1px dashed var(--line-strong); }
-.card__head { display: flex; align-items: flex-start; gap: var(--s-3); }
-.card__head > div:first-child { flex: 1; min-width: 0; }
+/* The action wraps under the title when the card is narrow, rather than squeezing the text into a column. */
+.card__head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--s-3); }
+.card__head > div:first-child { flex: 1 1 14rem; min-width: 0; }
 .card__head h2 { font-size: var(--fs-lg); font-weight: var(--fw-semibold); letter-spacing: var(--tr-title); line-height: var(--lh-snug); }
 .card__head p { margin-top: 2px; }
 .card__foot { display: flex; align-items: center; gap: var(--s-3); padding-top: var(--s-4); border-top: 1px solid var(--line); }

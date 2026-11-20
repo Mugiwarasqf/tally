@@ -60,6 +60,11 @@ export interface SavingsPlan {
   /** Still to find after the selected ideas. */
   gapLeft: Pence;
   reachable: boolean;
+  /**
+   * The largest goal that every cut together could still reach, rounded down to a tidy amount. Zero or less means
+   * usual spending (even after every cut) already takes all the income: `-bestGoal` is the monthly shortfall.
+   */
+  bestGoal: Pence;
   /** Budget amount per spending category once the selected cuts are applied (others stay at your usual). */
   targets: Map<string, Pence>;
 }
@@ -196,6 +201,10 @@ export function buildSavingsPlan(args: {
   const identified = counted.filter((i) => selected.has(i.id)).reduce((s, i) => s + i.saving, 0);
   const potential = counted.reduce((s, i) => s + i.saving, 0);
   const gapLeft = Math.max(0, need - identified);
+  // Income left once debt payments and the usual spending (less every possible cut) are covered.
+  const headroom = income - debtPlanned - (typicalSpend - potential);
+  const tidy = everyday(10);
+  const bestGoal = income > 0 ? (headroom > 0 ? Math.floor(headroom / tidy) * tidy : headroom) : 0;
 
   // ---- budget targets -----------------------------------------------------------------------------------------------
   const targets = new Map<string, Pence>();
@@ -205,7 +214,7 @@ export function buildSavingsPlan(args: {
     for (const i of counted) if (selected.has(i.id) && i.categoryId === c.id) t -= i.saving;
     if (t >= everyday(5)) targets.set(c.id, c.id === 'subscriptions' ? Math.round(t) : ceil5(t));
   }
-  return { income, goal, debt: debtPlanned, spendable, typicalSpend, need, ideas, selected, identified, potential, gapLeft, reachable: gapLeft === 0, targets };
+  return { income, goal, debt: debtPlanned, spendable, typicalSpend, need, ideas, selected, identified, potential, gapLeft, reachable: gapLeft === 0, bestGoal, targets };
 }
 
 /** Savings goal presets as a share of income, rounded to a tidy £10. */

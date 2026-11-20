@@ -78,6 +78,22 @@ describe('savings plan: where to cut', () => {
     expect(hard.gapLeft).toBe(hard.need - hard.identified);
   });
 
+  it('names the biggest goal that every cut together could still reach, and that goal is reachable', () => {
+    const hard = buildSavingsPlan({ ...base, goal: p(1200) });
+    const headroom = p(2400) - (hard.typicalSpend - hard.potential);
+    expect(hard.bestGoal).toBeGreaterThan(0);
+    expect(hard.bestGoal).toBeLessThanOrEqual(headroom);
+    expect(hard.bestGoal % p(10)).toBe(0); // a tidy amount
+    const best = buildSavingsPlan({ ...base, goal: hard.bestGoal });
+    expect(best.potential).toBeGreaterThanOrEqual(best.need);
+  });
+
+  it('reports the shortfall when usual spending, even after every cut, is more than comes in', () => {
+    const over = buildSavingsPlan({ ...base, income: p(1500), goal: p(300) }); // spends £1,912/mo on £1,500
+    expect(over.bestGoal).toBeLessThan(0);
+    expect(-over.bestGoal).toBe(over.typicalSpend - over.potential - p(1500));
+  });
+
   it('turns the chosen cuts into budget targets, leaving everything else at your usual', () => {
     const t = buildSavingsPlan({ ...base, goal: p(800) }).targets; // a bigger goal, so eating out is selected
     expect(t.get('housing')).toBe(p(850));

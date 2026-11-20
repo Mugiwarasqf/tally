@@ -87,7 +87,7 @@ export function BudgetSavings() {
       ) : (
         <dl className="verdict">
           <div><dt>Your income</dt><dd>{fmt(plan.income, { whole: true })}</dd></div>
-          <div><dt>Savings goal</dt><dd>−{fmt(plan.goal, { whole: true })}</dd></div>
+          <div><dt>Savings goal</dt><dd>{plan.goal > 0 ? '−' : ''}{fmt(plan.goal, { whole: true })}</dd></div>
           {plan.debt > 0 && <div><dt>Debt payments</dt><dd>−{fmt(plan.debt, { whole: true })}</dd></div>}
           <div className="verdict__key"><dt>You can spend</dt><dd>{fmt(Math.max(0, plan.spendable), { whole: true })}</dd></div>
           <div><dt>You usually spend</dt><dd>{fmt(plan.typicalSpend, { whole: true })}</dd></div>
@@ -104,14 +104,21 @@ export function BudgetSavings() {
               : <span className="chip chip--warn"><Icon name="Warning" size={14} weight="fill" />{fmt(plan.gapLeft, { whole: true })} short</span>}
           </div>
           <Meter pct={plan.need ? plan.identified / plan.need : 1} status={plan.reachable ? 'ontrack' : 'watch'} label="Share of the needed cuts selected" />
-          {!plan.reachable && (
-            <p className="t-xs">
-              {plan.potential >= plan.need
-                ? 'Switch on more of the cuts below to close the gap.'
-                : `Even every cut below only finds ${fmt(plan.potential, { whole: true })}. A smaller goal, or more income, would get you there.`}
-            </p>
-          )}
+          {!plan.reachable && plan.potential >= plan.need && <p className="t-xs">Switch on more of the cuts below to close the gap.</p>}
         </div>
+      )}
+
+      {/* The goal is out of reach even with every cut: say what is reachable, or that spending already outruns income. */}
+      {!noIncome && plan.need > 0 && plan.potential < plan.need && (
+        plan.bestGoal > 0 ? (
+          <Banner tone="warn" icon="Warning" action={<button className="btn btn--secondary btn--sm" onClick={() => setGoal(plan.bestGoal)}>Save {fmt(plan.bestGoal, { whole: true })} instead</button>}>
+            <strong>{fmt(plan.goal, { whole: true })} is out of reach for now.</strong> Even every cut below only finds {fmt(plan.potential, { whole: true })}. With all of them, you could save about {fmt(plan.bestGoal, { whole: true })} a month.
+          </Banner>
+        ) : (
+          <Banner tone="warn" icon="Warning" action={plan.goal > 0 ? <button className="btn btn--secondary btn--sm" onClick={() => setGoal(0)}>Set the goal to {fmt(0, { whole: true })} for now</button> : undefined}>
+            <strong>You usually spend {fmt(-plan.bestGoal + plan.potential, { whole: true })} more than comes in.</strong> Every cut below together finds {fmt(plan.potential, { whole: true })}, so there is nothing left to save yet. Switch the cuts on and build the budget first, then set a goal once spending is below your income.
+          </Banner>
+        )
       )}
 
       {counted.length > 0 ? (

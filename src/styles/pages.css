@@ -74,7 +74,8 @@
 .cover__months span { position: absolute; transform: translateX(0); }
 
 /* ---- budget ----------------------------------------------------------------------------- */
-.planner { align-self: start; position: sticky; top: calc(var(--topbar-h) + var(--s-2)); }
+/* Not sticky: the income and 50/30/20 cards share its column and would scroll underneath it. */
+.planner { align-self: start; }
 .sum { display: flex; flex-direction: column; font-size: var(--fs-sm); }
 .sum > div { display: flex; justify-content: space-between; gap: var(--s-4); padding: var(--s-2) 0; }
 .sum dt { color: var(--ink-2); }
